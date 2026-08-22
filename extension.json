@@ -1,0 +1,250 @@
+{
+	"name": "SaintapediaSuggest",
+	"version": "0.1.0",
+	"author": [
+		"Saintapedia contributors"
+	],
+	"url": "https://github.com/Saintapedia/Suggestor",
+	"descriptionmsg": "saintapediasuggest-desc",
+	"license-name": "GPL-2.0-or-later",
+	"type": "other",
+	"requires": {
+		"MediaWiki": ">= 1.39.0",
+		"extensions": {
+			"Cargo": "*"
+		}
+	},
+	"MessagesDirs": {
+		"SaintapediaSuggest": [
+			"i18n"
+		]
+	},
+	"AutoloadNamespaces": {
+		"MediaWiki\\Extension\\SaintapediaSuggest\\": "includes/"
+	},
+	"TestAutoloadNamespaces": {
+		"MediaWiki\\Extension\\SaintapediaSuggest\\Tests\\": "tests/phpunit/"
+	},
+	"APIModules": {
+		"saintapediasuggest": {
+			"class": "MediaWiki\\Extension\\SaintapediaSuggest\\Api\\ApiSaintapediaSuggestSubmit",
+			"services": [
+				"SaintapediaSuggest.SuggestionStore",
+				"SaintapediaSuggest.CargoFieldRegistry",
+				"TitleFactory"
+			]
+		}
+	},
+	"SpecialPages": {
+		"SaintapediaSuggest": {
+			"class": "MediaWiki\\Extension\\SaintapediaSuggest\\Special\\SpecialSaintapediaSuggest",
+			"services": [
+				"SaintapediaSuggest.SuggestionStore",
+				"TitleFactory"
+			]
+		}
+	},
+	"AvailableRights": [
+		"saintapediasuggest-view",
+		"saintapediasuggest-viewemail",
+		"saintapediasuggest-export"
+	],
+	"GroupPermissions": {
+		"sysop": {
+			"saintapediasuggest-view": true,
+			"saintapediasuggest-viewemail": true,
+			"saintapediasuggest-export": true
+		}
+	},
+	"HookHandlers": {
+		"main": {
+			"class": "MediaWiki\\Extension\\SaintapediaSuggest\\Hooks",
+			"services": [
+				"MainConfig",
+				"SaintapediaSuggest.CargoFieldRegistry",
+				"SaintapediaSuggest.SuggestionStore"
+			]
+		},
+		"schema": {
+			"class": "MediaWiki\\Extension\\SaintapediaSuggest\\SchemaHooks"
+		},
+		"echo": {
+			"class": "MediaWiki\\Extension\\SaintapediaSuggest\\Notifications\\EchoHooks"
+		}
+	},
+	"Hooks": {
+		"BeforePageDisplay": "main",
+		"SidebarBeforeOutput": "main",
+		"PageSaveComplete": "main",
+		"PageDeleteComplete": "main",
+		"PageMoveComplete": "main",
+		"LoadExtensionSchemaUpdates": "schema",
+		"BeforeCreateEchoEvent": "echo"
+	},
+	"ResourceFileModulePaths": {
+		"localBasePath": "modules",
+		"remoteExtPath": "SaintapediaSuggest/modules"
+	},
+	"ResourceModules": {
+		"ext.saintapediasuggest.widget": {
+			"packageFiles": [
+				"ext.saintapediasuggest.widget/widget.js"
+			],
+			"styles": [
+				"ext.saintapediasuggest.widget/widget.css"
+			],
+			"messages": [
+				"saintapediasuggest-button-label",
+				"saintapediasuggest-hide",
+				"saintapediasuggest-panel-title",
+				"saintapediasuggest-panel-subtitle",
+				"saintapediasuggest-field-label",
+				"saintapediasuggest-field-placeholder",
+				"saintapediasuggest-current-label",
+				"saintapediasuggest-current-empty",
+				"saintapediasuggest-suggested-label",
+				"saintapediasuggest-suggested-placeholder",
+				"saintapediasuggest-comment-label",
+				"saintapediasuggest-comment-placeholder",
+				"saintapediasuggest-email-label",
+				"saintapediasuggest-email-placeholder",
+				"saintapediasuggest-submit",
+				"saintapediasuggest-cancel",
+				"saintapediasuggest-success-title",
+				"saintapediasuggest-success-body",
+				"saintapediasuggest-error-generic",
+				"saintapediasuggest-error-ratelimit",
+				"saintapediasuggest-error-nofield",
+				"saintapediasuggest-error-novalue",
+				"saintapediasuggest-error-unchanged",
+				"saintapediasuggest-error-captcha",
+				"saintapediasuggest-error-captcha-unavailable"
+			],
+			"dependencies": [
+				"mediawiki.api",
+				"mediawiki.user",
+				"mediawiki.util"
+			]
+		},
+		"ext.saintapediasuggest.special": {
+			"packageFiles": [
+				"ext.saintapediasuggest.special/special.js"
+			],
+			"styles": [
+				"ext.saintapediasuggest.special/special.css"
+			],
+			"dependencies": [
+				"mediawiki.util"
+			],
+			"messages": [
+				"saintapediasuggest-bulk-confirm"
+			]
+		}
+	},
+	"ServiceWiringFiles": [
+		"includes/ServiceWiring.php"
+	],
+	"config": {
+		"SaintapediaSuggestMode": {
+			"value": "public",
+			"description": "'public' (anon-friendly, captcha on by default, short form) or 'enterprise' (relaxed limits, captcha off by default, email field on)."
+		},
+		"SaintapediaSuggestNamespaces": {
+			"value": [
+				0
+			],
+			"description": "Namespaces where the widget is shown and the API accepts submissions. Default: main namespace only."
+		},
+		"SaintapediaSuggestTables": {
+			"value": {},
+			"description": "Allow-list of Cargo tables and fields readers may target. Map of table name => list of field names, or table name => '*' for every non-underscore field in that table's schema. Empty map = feature effectively off (no field is suggestable)."
+		},
+		"SaintapediaSuggestMaxFields": {
+			"value": 40,
+			"description": "Hard cap on how many (table, field) pairs are exposed to one page's widget, so a wide allow-list cannot bloat every page's HTML."
+		},
+		"SaintapediaSuggestMaxValueLength": {
+			"value": 500,
+			"description": "Max characters accepted for a suggested value (and stored for the current-value snapshot)."
+		},
+		"SaintapediaSuggestRateLimit": {
+			"value": 5,
+			"description": "Max suggestions per IP per day in public mode."
+		},
+		"SaintapediaSuggestEnterpriseRateLimit": {
+			"value": 50,
+			"description": "Max suggestions per IP per day in enterprise mode."
+		},
+		"SaintapediaSuggestEnableEmail": {
+			"value": false,
+			"description": "Show the optional contact email field (automatically enabled in enterprise mode)."
+		},
+		"SaintapediaSuggestRequireCaptcha": {
+			"value": null,
+			"description": "Require hCaptcha via ConfirmEdit. null = auto (true for public mode, false for enterprise). true/false overrides per wiki."
+		},
+		"SaintapediaSuggestNotifyUsers": {
+			"value": [],
+			"description": "Usernames (who can manage suggestions) receiving Echo alerts on each new suggestion. Empty = none. Requires Extension:Echo."
+		},
+		"SaintapediaSuggestNotifyWatchers": {
+			"value": true,
+			"description": "When true and Echo is loaded, also notify watchers of the article who may manage suggestions. Never notifies users who cannot open the dashboard."
+		},
+		"SaintapediaSuggestNotifyEmail": {
+			"value": false,
+			"description": "Optional single email address notified on each new suggestion (requires $wgEnableEmail). false disables."
+		},
+		"SaintapediaSuggestAccessPage": {
+			"value": "SaintapediaSuggest-access",
+			"description": "MediaWiki-namespace page (DB key without prefix) listing groups allowed to manage suggestions. Missing/empty page falls back to AccessGroups."
+		},
+		"SaintapediaSuggestAccessGroups": {
+			"value": [
+				"sysop"
+			],
+			"description": "Default groups when the access page is missing or empty. Default sysop (safe for public wikis)."
+		},
+		"SaintapediaSuggestEmailAccessPage": {
+			"value": "SaintapediaSuggest-email-access",
+			"description": "MediaWiki-namespace page listing groups allowed to see the optional contact-email field. Separate from dashboard access."
+		},
+		"SaintapediaSuggestEmailAccessGroups": {
+			"value": [
+				"sysop"
+			],
+			"description": "Default groups allowed to see the contact-email field when the email access page is missing or empty."
+		},
+		"SaintapediaSuggestExportAccessPage": {
+			"value": "SaintapediaSuggest-export-access",
+			"description": "MediaWiki-namespace page listing groups allowed to download the JSON export. Separate from dashboard access."
+		},
+		"SaintapediaSuggestExportAccessGroups": {
+			"value": [
+				"sysop"
+			],
+			"description": "Default groups allowed to export when the export access page is missing or empty."
+		},
+		"SaintapediaSuggestRateLimitPage": {
+			"value": "SaintapediaSuggest-ratelimit",
+			"description": "MediaWiki-namespace page holding a single integer overriding the mode-appropriate rate limit without a deploy."
+		},
+		"SaintapediaSuggestNotifyUsersPage": {
+			"value": "SaintapediaSuggest-notify-users",
+			"description": "MediaWiki-namespace page, one username per line, overriding SaintapediaSuggestNotifyUsers without a deploy."
+		},
+		"SaintapediaSuggestRequireCaptchaPage": {
+			"value": "SaintapediaSuggest-require-captcha",
+			"description": "MediaWiki-namespace page holding true/false overriding SaintapediaSuggestRequireCaptcha. Security-sensitive: editable by anyone with editinterface."
+		},
+		"SaintapediaSuggestEnabledPage": {
+			"value": "SaintapediaSuggest-enabled",
+			"description": "MediaWiki-namespace page holding true/false to switch the reader widget off wiki-wide without a deploy. Missing/empty page falls back to SaintapediaSuggestEnabled."
+		},
+		"SaintapediaSuggestEnabled": {
+			"value": true,
+			"description": "Master switch for the reader-facing widget. The dashboard stays reachable when this is false."
+		}
+	},
+	"manifest_version": 2
+}

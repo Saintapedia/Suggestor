@@ -1,0 +1,200 @@
+/*!
+ * SaintapediaSuggest reader widget styles.
+ * Scoped under .sps-root so the widget cannot leak styles into article content.
+ */
+
+.sps-root {
+	position: fixed;
+	right: 1rem;
+	bottom: 1rem;
+	z-index: 100;
+	font-size: 0.875rem;
+}
+
+.sps-root.sps-hidden {
+	display: none;
+}
+
+.sps-fab {
+	background: #36c;
+	color: #fff;
+	border: 1px solid #36c;
+	border-radius: 2px;
+	padding: 0.5rem 0.9rem;
+	cursor: pointer;
+	box-shadow: 0 1px 4px rgba( 0, 0, 0, 0.25 );
+	font-size: 0.875rem;
+	line-height: 1.4;
+}
+
+.sps-fab:hover {
+	background: #447ff5;
+	border-color: #447ff5;
+}
+
+.sps-fab:focus {
+	outline: 2px solid #36c;
+	outline-offset: 1px;
+}
+
+.sps-fab-hide {
+	background: #fff;
+	color: #54595d;
+	border: 1px solid #a2a9b1;
+	border-radius: 2px;
+	margin-left: 0.25rem;
+	padding: 0.5rem 0.55rem;
+	cursor: pointer;
+	line-height: 1;
+}
+
+.sps-fab-hide:hover {
+	background: #f8f9fa;
+	color: #202122;
+}
+
+.sps-panel {
+	position: absolute;
+	right: 0;
+	bottom: 3rem;
+	width: 22rem;
+	max-width: calc( 100vw - 2rem );
+	max-height: 75vh;
+	overflow-y: auto;
+	background: #fff;
+	color: #202122;
+	border: 1px solid #a2a9b1;
+	border-radius: 2px;
+	box-shadow: 0 2px 12px rgba( 0, 0, 0, 0.2 );
+	padding: 1rem;
+}
+
+.sps-panel[ hidden ] {
+	display: none;
+}
+
+.sps-panel h2 {
+	margin: 0 0 0.25rem;
+	font-size: 1.05rem;
+	border: 0;
+	padding: 0;
+}
+
+.sps-subtitle {
+	margin: 0 0 0.75rem;
+	color: #54595d;
+	font-size: 0.8125rem;
+	line-height: 1.4;
+}
+
+.sps-form label {
+	display: block;
+	margin: 0.6rem 0 0.2rem;
+	font-weight: bold;
+	font-size: 0.8125rem;
+}
+
+.sps-field-select,
+.sps-suggested,
+.sps-comment,
+.sps-email {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 0.4rem;
+	border: 1px solid #a2a9b1;
+	border-radius: 2px;
+	font-family: inherit;
+	font-size: 0.875rem;
+}
+
+.sps-field-select:focus,
+.sps-suggested:focus,
+.sps-comment:focus,
+.sps-email:focus {
+	border-color: #36c;
+	outline: 1px solid #36c;
+}
+
+.sps-current {
+	margin: 0.4rem 0;
+	padding: 0.4rem 0.5rem;
+	background: #f8f9fa;
+	border-left: 3px solid #a2a9b1;
+	color: #54595d;
+	font-size: 0.8125rem;
+	word-break: break-word;
+}
+
+.sps-current:empty {
+	display: none;
+}
+
+.sps-hcaptcha {
+	margin: 0.75rem 0;
+}
+
+.sps-status {
+	margin: 0.5rem 0;
+	font-size: 0.8125rem;
+	min-height: 1em;
+}
+
+.sps-status-error {
+	color: #b32424;
+}
+
+.sps-actions {
+	display: flex;
+	gap: 0.5rem;
+	margin-top: 0.75rem;
+}
+
+.sps-submit {
+	background: #36c;
+	color: #fff;
+	border: 1px solid #36c;
+	border-radius: 2px;
+	padding: 0.45rem 0.9rem;
+	cursor: pointer;
+	font-size: 0.875rem;
+}
+
+.sps-submit:hover:enabled {
+	background: #447ff5;
+}
+
+.sps-submit:disabled {
+	background: #c8ccd1;
+	border-color: #c8ccd1;
+	cursor: default;
+}
+
+.sps-cancel {
+	background: #fff;
+	color: #202122;
+	border: 1px solid #a2a9b1;
+	border-radius: 2px;
+	padding: 0.45rem 0.9rem;
+	cursor: pointer;
+	font-size: 0.875rem;
+}
+
+.sps-cancel:hover {
+	background: #f8f9fa;
+}
+
+.sps-success h3 {
+	margin: 0 0 0.25rem;
+	font-size: 1rem;
+}
+
+.sps-success p {
+	margin: 0;
+	color: #54595d;
+}
+
+@media screen and ( max-width: 480px ) {
+	.sps-panel {
+		width: calc( 100vw - 2rem );
+	}
+}
