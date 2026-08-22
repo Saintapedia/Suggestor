@@ -173,6 +173,7 @@ class ApiSaintapediaSuggestSubmit extends ApiBase {
 			'ipHash'         => $ipHash,
 			'contactEmail'   => $contactEmail,
 			'mode'           => $mode,
+			'mergeDuplicates' => (bool)$config->get( 'SaintapediaSuggestMergeDuplicates' ),
 		], $limit );
 
 		if ( $id === null ) {

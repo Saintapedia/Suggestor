@@ -170,15 +170,40 @@ $wgSaintapediaSuggestNotifyEmail    = 'data@example.org';
 |----------|---------|
 | **`Special:SaintapediaSuggest`** | **Dashboard:** all suggestions, status chips, field filter, search, bulk process |
 | `Special:SaintapediaSuggest/<pageid>` | One article |
+| `Special:SaintapediaSuggest/detail/<id>` | One suggestion: full values, every duplicate report, and the complete status history |
 | `Special:SaintapediaSuggest/export` | JSON of the current filters |
 | `Special:SaintapediaSuggest/export/<pageid>` | JSON for one article |
 | Toolbox → **Field suggestions** | Jump to this page's suggestions (users with the right) |
+
+The dashboard also has a **Go to page** box for jumping straight to one
+article's suggestions by title.
 
 Statuses: **new → reviewed → actioned / dismissed**. Every transition is written to
 an append-only audit table (`sps_suggestion_log`) with the acting user, both statuses
 and any reviewer note. A reviewer cannot move an item back to `new`.
 
 Status changes use POST + CSRF token + redirect, so a browser refresh cannot replay one.
+
+### Repeat reports are folded together
+
+Ten readers noticing one wrong phone number should be one queue item, not ten.
+When a submission matches an **open** suggestion for the same page and field,
+it is stored as a duplicate of that canonical row, which shows a
+**+N other readers** badge. The dashboard, its counts, and the field facets all
+list canonical rows only; the detail view shows every individual report,
+because a second reporter often supplies the source the first one omitted.
+
+Matching is deliberately conservative. It folds case, surrounding and internal
+whitespace, and the Unicode punctuation that phones and copy-paste substitute
+silently (curly apostrophes, en/em dashes, non-breaking spaces). It does **not**
+strip punctuation: `555-0100` and `5550100` are different proposed values and a
+reviewer should see both.
+
+Only open suggestions absorb duplicates. If a suggestion was dismissed and a new
+reader proposes the same value again, that is evidence the dismissal may have
+been wrong, so it gets its own queue item rather than disappearing into a closed
+one. Set `$wgSaintapediaSuggestMergeDuplicates = false` to keep every submission
+separate.
 
 ---
 
@@ -275,6 +300,10 @@ that belongs under code review.
 | `$wgSaintapediaSuggestNotifyUsers` | `[]` | Usernames receiving Echo alerts |
 | `$wgSaintapediaSuggestNotifyWatchers` | `true` | Also alert page watchers who may triage |
 | `$wgSaintapediaSuggestNotifyEmail` | `false` | One email address alerted per submission |
+| `$wgSaintapediaSuggestMergeDuplicates` | `true` | Fold repeat reports of one value into a single queue item |
+| `$wgSaintapediaSuggestWebhook` | `''` | HTTPS endpoint for the batch exporter. HTTP is refused |
+| `$wgSaintapediaSuggestWebhookToken` | `''` | Optional Bearer token for the batch POST. Keep in LocalSettings / env |
+| `$wgSaintapediaSuggestBatchSize` | `100` | Suggestions per exporter run (max 500) |
 | `$wgSaintapediaSuggestAccessGroups` | `[ 'sysop' ]` | Dashboard groups when the access page is missing/empty |
 | `$wgSaintapediaSuggestEmailAccessGroups` | `[ 'sysop' ]` | Contact-email groups |
 | `$wgSaintapediaSuggestExportAccessGroups` | `[ 'sysop' ]` | Export groups |
@@ -338,26 +367,113 @@ a submitter fabricate the before-state a reviewer sees.
 
 | Table | Purpose |
 |-------|---------|
-| `sps_suggestion` | One row per suggestion. Indexed on `(page_id, status, timestamp)`, `(status, timestamp)`, `(ip_hash, timestamp)`, `(table, field, status)` |
+| `sps_suggestion` | One row per submission, including folded duplicates. Indexed on `(page_id, status, timestamp)`, `(status, timestamp)`, `(ip_hash, timestamp)`, `(table, field, status)`, `(page_id, table, field, duplicate_of)`, `(duplicate_of)`, `(batch_processed, timestamp)` |
 | `sps_suggestion_log` | Append-only audit of every status change |
+
+Migrations are registered in `includes/SchemaHooks.php`. Columns and indexes are
+registered **separately** — `addExtensionField()` for the former,
+`addExtensionIndex()` for the latter. A bare `CREATE INDEX` bundled into a column
+patch aborts the rest of that patch when the index name already exists, and
+MediaWiki cannot resume a half-applied patch file. This is not hypothetical:
+MySQL keeps a composite index alive (minus the dropped column) when a column is
+dropped, so any wiki where a column was dropped and re-added hits exactly that
+clash.
 
 ---
 
 ## Development / tests
 
+Two suites, split by what they need.
+
 ```bash
-# Pure unit tests — no MediaWiki install needed
+# Unit — pure helpers, no MediaWiki install, no database
 phpunit -c phpunit.xml.dist
 ```
 
-The unit suite covers the service-free helpers: allow-list parsing, filter
-normalization, access-page parsing and the wiki-config resolution rules
-(including the captcha fail-closed path). Anything touching the database or
-`MediaWikiServices` belongs in an integration test run through MediaWiki's own
-`phpunit.php`.
+Covers allow-list parsing, Cargo's physical-column layout, duplicate matching,
+batch payload construction and redaction, filter normalization, access-page
+parsing, and the wiki-config resolution rules including the captcha
+fail-closed path.
+
+```bash
+# Integration — needs a MediaWiki checkout with its require-dev packages
+cd /path/to/mediawiki
+composer phpunit    # restricted to the SaintapediaSuggest group
+```
+
+Covers `SuggestionStore` against a real database (rate-limit locking, duplicate
+folding, audit entries, the per-page mutation guard, search escaping, email
+column exclusion, batch marking), `CargoFieldRegistry` against a live Cargo
+install, and the submit API's refusal ordering.
+
+> Production images — Canasta included — ship **without** MediaWiki's
+> `require-dev` packages, so the integration suite cannot run on one until those
+> are installed. On such a wiki, exercise the same paths over HTTP instead.
+
+---
+
+## Offline / LLM batch export (optional)
+
+Posts pending suggestions to an external endpoint — an LLM classifier, a ticket
+queue, a spreadsheet job — for triage help. It never changes a status and never
+touches Cargo; it only records that a row has been sent.
+
+```php
+$wgSaintapediaSuggestWebhook      = 'https://triage.example.org/suggestions';
+$wgSaintapediaSuggestWebhookToken = getenv( 'SUGGEST_WEBHOOK_TOKEN' );
+$wgSaintapediaSuggestBatchSize    = 100;
+```
+
+```bash
+php maintenance/run.php \
+    extensions/SaintapediaSuggest/maintenance/ProcessSuggestions.php --dry-run
+
+# Canasta:
+# canasta maintenance exec -i <instance> -- php maintenance/run.php \
+#     extensions/SaintapediaSuggest/maintenance/ProcessSuggestions.php
+```
+
+| Flag | Effect |
+|------|--------|
+| `--dry-run` | Print the payload; post nothing, mark nothing |
+| `--webhook=<url>` | Override the configured endpoint |
+| `--limit=<n>` | Rows this run (clamped to 500) |
+
+Behaviour worth knowing before you point it at anything:
+
+- **HTTPS only.** A plaintext endpoint is refused outright — the payload is
+  reader-submitted content and the request carries your bearer token.
+- **Failure is safe.** If the POST fails or returns a non-2xx status, no rows are
+  marked exported, so the next run retries them. Rows are marked only after the
+  endpoint accepts them.
+- **The payload carries the suggestion, not the submitter.** No contact email, no
+  IP hash, no private reviewer note — it crosses a boundary to a third party.
+  It does include `duplicateCount`, so a classifier can weight corroborated
+  reports.
+- **Only open, canonical rows are sent.** Actioned and dismissed items have
+  already had a human decision; folded duplicates travel as a count on their
+  canonical row.
+- **Tokens are redacted from log output**, including one smuggled into the URL's
+  query string.
+
+---
+
+## Translations
+
+`en` is the source. `es`, `fr`, `it` and `pt` cover the reader widget and the
+dashboard; any message not present in a language falls back to English, so a
+partial file is safe. The `qqq` file documents every message for translators.
+
+For a wiki that wants broad language coverage, the right long-term path is
+[translatewiki.net](https://translatewiki.net/) rather than hand-maintained
+files here.
 
 ---
 
 ## Version
 
-**0.1.0** — initial scaffold. Collect + triage only; no write-back to Cargo.
+**0.2.0** — duplicate folding, suggestion detail view with audit trail, page
+lookup, batch exporter, named config registry, es/fr/it/pt, integration suite.
+Still collect + triage only; no write-back to Cargo.
+
+**0.1.0** — initial scaffold.

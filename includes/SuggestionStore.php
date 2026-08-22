@@ -36,8 +36,13 @@ class SuggestionStore {
 		'sg_status_user_id',
 		'sg_status_timestamp',
 		'sg_work_note',
+		'sg_duplicate_of',
+		'sg_duplicate_count',
 		'sg_timestamp',
 	];
+
+	/** Upper bound on open variants scanned when looking for a duplicate. */
+	private const DUPLICATE_SCAN_CAP = 200;
 
 	private ILoadBalancer $loadBalancer;
 
@@ -72,10 +77,102 @@ class SuggestionStore {
 			if ( $this->countRecentByIpHash( $ipHash, $db ) >= $limit ) {
 				return null;
 			}
-			return $this->insertOn( $db, $data );
+
+			// Fold this into an existing open suggestion when another reader
+			// already proposed the same value for the same field. Done under
+			// the rate-limit lock so two simultaneous reports of one problem
+			// cannot both become canonical.
+			$canonical = null;
+			if ( $data['mergeDuplicates'] ?? true ) {
+				$canonical = $this->findOpenDuplicate(
+					(int)$data['pageId'],
+					(string)$data['cargoTable'],
+					(string)$data['cargoField'],
+					(string)$data['suggestedValue'],
+					$db
+				);
+			}
+			$data['duplicateOf'] = $canonical;
+
+			$id = $this->insertOn( $db, $data );
+
+			if ( $canonical !== null ) {
+				$this->bumpDuplicateCount( $db, $canonical );
+			}
+			return $id;
 		} finally {
 			$db->unlock( $lockName, __METHOD__ );
 		}
+	}
+
+	/**
+	 * Canonical suggestion this submission duplicates, if any.
+	 *
+	 * Narrows to the same page/table/field in SQL (the sps_dupe_lookup
+	 * index), then applies SuggestionMerger's normalized comparison in PHP —
+	 * the match folds case, whitespace and Unicode punctuation, which the
+	 * database cannot express without storing a second redundant column.
+	 *
+	 * @param IDatabase|null $db Primary connection when called under the lock
+	 */
+	public function findOpenDuplicate(
+		int $pageId,
+		string $cargoTable,
+		string $cargoField,
+		string $suggestedValue,
+		?IDatabase $db = null
+	): ?int {
+		if ( $pageId <= 0 || SuggestionMerger::normalizeValue( $suggestedValue ) === '' ) {
+			return null;
+		}
+		$db ??= $this->loadBalancer->getConnection( DB_REPLICA );
+
+		$rows = $db->select(
+			'sps_suggestion',
+			[ 'sg_id', 'sg_status', 'sg_suggested_value', 'sg_duplicate_of' ],
+			[
+				'sg_page_id'     => $pageId,
+				'sg_cargo_table' => $cargoTable,
+				'sg_cargo_field' => $cargoField,
+				'sg_status'      => SuggestionMerger::OPEN_STATUSES,
+				'sg_duplicate_of' => null,
+			],
+			__METHOD__,
+			[
+				'ORDER BY' => 'sg_id ASC',
+				// A field with more open variants than this is already a
+				// triage problem; scanning further would not help.
+				'LIMIT' => self::DUPLICATE_SCAN_CAP,
+			]
+		);
+
+		return SuggestionMerger::pickCanonical( iterator_to_array( $rows ), $suggestedValue );
+	}
+
+	private function bumpDuplicateCount( IDatabase $db, int $canonicalId ): void {
+		$db->update(
+			'sps_suggestion',
+			[ 'sg_duplicate_count = sg_duplicate_count + 1' ],
+			[ 'sg_id' => $canonicalId ],
+			__METHOD__
+		);
+	}
+
+	/**
+	 * The duplicate rows folded into one canonical suggestion, oldest first.
+	 *
+	 * @return object[]
+	 */
+	public function getDuplicates( int $canonicalId, int $limit = 50 ): array {
+		$db = $this->loadBalancer->getConnection( DB_REPLICA );
+		$rows = $db->select(
+			'sps_suggestion',
+			[ 'sg_id', 'sg_suggested_value', 'sg_comment', 'sg_mode', 'sg_timestamp' ],
+			[ 'sg_duplicate_of' => $canonicalId ],
+			__METHOD__,
+			[ 'ORDER BY' => 'sg_timestamp ASC, sg_id ASC', 'LIMIT' => $limit ]
+		);
+		return iterator_to_array( $rows );
 	}
 
 	private function insertOn( IDatabase $db, array $data ): int {
@@ -95,6 +192,7 @@ class SuggestionStore {
 				'sg_contact_email'   => $data['contactEmail'] ?? null,
 				'sg_mode'            => $data['mode'],
 				'sg_status'          => 'new',
+				'sg_duplicate_of'    => $data['duplicateOf'] ?? null,
 				'sg_timestamp'       => $db->timestamp(),
 			],
 			__METHOD__
@@ -131,7 +229,9 @@ class SuggestionStore {
 		$res = $db->select(
 			'sps_suggestion',
 			[ 'sg_status', 'cnt' => 'COUNT(*)' ],
-			[ 'sg_page_id' => $pageId ],
+			// Canonical rows only, so the toolbox badge matches what the
+			// dashboard will actually show.
+			[ 'sg_page_id' => $pageId, 'sg_duplicate_of' => null ],
 			__METHOD__,
 			[ 'GROUP BY' => 'sg_status' ]
 		);
@@ -235,7 +335,7 @@ class SuggestionStore {
 		$res = $db->select(
 			'sps_suggestion',
 			[ 'sg_cargo_table', 'sg_cargo_field', 'cnt' => 'COUNT(*)' ],
-			[],
+			[ 'sg_duplicate_of' => null ],
 			__METHOD__,
 			[
 				'GROUP BY' => [ 'sg_cargo_table', 'sg_cargo_field' ],
@@ -263,6 +363,14 @@ class SuggestionStore {
 	 */
 	private function buildDashboardQuery( $db, array $filters, ?int $limit, ?int $offset ): array {
 		$conds = [];
+
+		// Folded duplicates are never listed on their own: they belong to the
+		// canonical row, which shows them as a count. Pass
+		// includeDuplicates=true only where every raw submission is wanted
+		// (the batch exporter, and the canonical row's detail view).
+		if ( empty( $filters['includeDuplicates'] ) ) {
+			$conds['sg_duplicate_of'] = null;
+		}
 
 		$status = $filters['status'] ?? null;
 		if ( is_string( $status ) && $status !== '' && $status !== 'all' ) {
@@ -306,6 +414,54 @@ class SuggestionStore {
 		}
 
 		return [ $conds, $options ];
+	}
+
+	/**
+	 * Canonical suggestions not yet posted to the batch webhook, oldest first.
+	 *
+	 * Only open items are exported: an actioned or dismissed suggestion has
+	 * already had a human decision and does not need offline triage help.
+	 *
+	 * @return object[]
+	 */
+	public function getPendingBatch( int $limit = 100 ): array {
+		$db = $this->loadBalancer->getConnection( DB_REPLICA );
+		$rows = $db->select(
+			'sps_suggestion',
+			array_merge( self::MANAGER_LIST_FIELDS, [ 'sg_batch_processed' ] ),
+			[
+				'sg_batch_processed' => 0,
+				'sg_status'          => SuggestionMerger::OPEN_STATUSES,
+				'sg_duplicate_of'    => null,
+			],
+			__METHOD__,
+			[ 'ORDER BY' => 'sg_timestamp ASC, sg_id ASC', 'LIMIT' => $limit ]
+		);
+		return iterator_to_array( $rows );
+	}
+
+	/**
+	 * Mark rows as exported. Called only after the webhook accepted them, so
+	 * a failed POST is retried on the next run rather than silently dropped.
+	 *
+	 * @param int[] $ids
+	 */
+	public function markBatchProcessed( array $ids ): int {
+		$ids = array_values( array_unique( array_filter( array_map( 'intval', $ids ) ) ) );
+		if ( !$ids ) {
+			return 0;
+		}
+		$db = $this->loadBalancer->getConnection( DB_PRIMARY );
+		$db->update(
+			'sps_suggestion',
+			[
+				'sg_batch_processed' => 1,
+				'sg_batch_timestamp' => $db->timestamp(),
+			],
+			[ 'sg_id' => $ids ],
+			__METHOD__
+		);
+		return (int)$db->affectedRows();
 	}
 
 	/** One row by id, including the columns list queries omit. */

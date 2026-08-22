@@ -308,3 +308,107 @@
 		grid-template-columns: 1fr 1fr;
 	}
 }
+
+/* Page-title lookup */
+
+.sps-lookup {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0.75rem 0;
+}
+
+.sps-lookup label {
+	font-weight: bold;
+	font-size: 0.8125rem;
+}
+
+.sps-lookup input[ type='text' ] {
+	min-width: 18rem;
+	padding: 0.3rem;
+	border: 1px solid #a2a9b1;
+	border-radius: 2px;
+	font-size: 0.875rem;
+}
+
+/* Duplicate corroboration */
+
+.sps-dup-badge {
+	font-size: 0.75rem;
+	font-weight: bold;
+	padding: 0.1rem 0.45rem;
+	border-radius: 10px;
+	background: #fef6e7;
+	border: 1px solid #fc3;
+	color: #71570d;
+}
+
+.sps-detail-link {
+	font-size: 0.8125rem;
+}
+
+.sps-duplicates {
+	margin: 1rem 0;
+}
+
+.sps-duplicates h3,
+.sps-audit h3 {
+	font-size: 1rem;
+	margin: 0 0 0.4rem;
+}
+
+.sps-dup-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.sps-dup-item {
+	padding: 0.35rem 0.5rem;
+	border-left: 3px solid #fc3;
+	background: #fdfdfd;
+	margin-bottom: 0.3rem;
+	font-size: 0.875rem;
+}
+
+.sps-dup-item .sps-time {
+	margin-left: 0;
+	margin-right: 0.5rem;
+}
+
+.sps-dup-value {
+	word-break: break-word;
+}
+
+/* Audit log */
+
+.sps-audit {
+	margin: 1rem 0;
+}
+
+.sps-audit-table {
+	width: 100%;
+	font-size: 0.875rem;
+}
+
+.sps-audit-table td,
+.sps-audit-table th {
+	padding: 0.3rem 0.5rem;
+	text-align: left;
+	vertical-align: top;
+}
+
+.sps-audit-time {
+	white-space: nowrap;
+	color: #54595d;
+}
+
+.sps-audit-note {
+	word-break: break-word;
+}
+
+.sps-audit-system {
+	color: #72777d;
+	font-style: italic;
+}

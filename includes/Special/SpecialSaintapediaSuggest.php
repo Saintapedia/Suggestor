@@ -6,6 +6,8 @@ use Html;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestAccess;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestFilters;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestionStore;
+use MediaWiki\MediaWikiServices;
+use MediaWiki\Title\Title;
 use MediaWiki\Title\TitleFactory;
 use PermissionsError;
 use SpecialPage;
@@ -88,12 +90,56 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 		}
 		$this->showMutationFlash();
 
+		// Single-suggestion view with its audit trail and folded duplicates.
+		if ( strpos( $par, 'detail/' ) === 0 ) {
+			$rest = substr( $par, strlen( 'detail/' ) );
+			if ( ctype_digit( $rest ) ) {
+				$this->showDetail( (int)$rest );
+				return;
+			}
+		}
+
 		if ( $par !== '' && ctype_digit( $par ) ) {
 			$this->showPageSuggestions( (int)$par );
 			return;
 		}
 
+		// Jump to one article's suggestions by title. A dedicated submit name
+		// keeps the filter form's "Apply" from triggering this.
+		if ( $this->getRequest()->getCheck( 'sps_goto' ) ) {
+			if ( $this->handlePageLookup() ) {
+				return;
+			}
+		}
+
 		$this->showDashboard();
+	}
+
+	/**
+	 * Resolve the title-lookup box to a per-article view.
+	 *
+	 * @return bool True when a redirect was issued
+	 */
+	private function handlePageLookup(): bool {
+		$pagename = trim( (string)$this->getRequest()->getVal( 'pagename', '' ) );
+		if ( $pagename === '' ) {
+			return false;
+		}
+
+		$title = Title::newFromText( $pagename );
+		if ( !$title || !$title->exists() ) {
+			$this->getOutput()->addHTML( Html::element(
+				'div',
+				[ 'class' => 'sps-flash sps-flash-warning' ],
+				$this->msg( 'saintapediasuggest-lookup-notfound' )->plaintextParams( $pagename )->text()
+			) );
+			return false;
+		}
+
+		$this->getOutput()->redirect(
+			$this->getPageTitle( (string)$title->getArticleID() )->getFullURL()
+		);
+		return true;
 	}
 
 	/* ---------------------------------------------------------------- views */
@@ -118,6 +164,7 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 		) );
 
 		$out->addHTML( $this->renderSummaryChips( $counts, $filters ) );
+		$out->addHTML( $this->renderPageLookupForm() );
 		$out->addHTML( $this->renderFilterForm( $filters ) );
 
 		if ( !$rows ) {
@@ -213,6 +260,160 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 		$out->addHTML( $this->renderExportLink( $filters, $pageId ) );
 	}
 
+	/**
+	 * One suggestion in full: its values, every folded duplicate, and the
+	 * complete status history. This is the view that answers "who changed
+	 * this, when, and why" — the audit table exists for exactly that and is
+	 * otherwise invisible.
+	 */
+	private function showDetail( int $id ): void {
+		$out = $this->getOutput();
+
+		$row = $this->store->getById( $id );
+		if ( !$row ) {
+			$out->addHTML( Html::element(
+				'p',
+				[ 'class' => 'error' ],
+				$this->msg( 'saintapediasuggest-unknown-suggestion' )->numParams( $id )->text()
+			) );
+			return;
+		}
+
+		$out->setPageTitle(
+			$this->msg( 'saintapediasuggest-detail-title' )
+				->numParams( $id )
+				->plaintextParams(
+					(string)$row->sg_cargo_table . '.' . (string)$row->sg_cargo_field
+				)
+				->text()
+		);
+
+		$title = $this->titleFactory->newFromID( (int)$row->sg_page_id );
+		$links = $this->getLinkRenderer()->makeLink(
+			$this->getPageTitle(),
+			$this->msg( 'saintapediasuggest-back-to-dashboard' )->text()
+		);
+		if ( $title ) {
+			$links .= ' · ' . $this->getLinkRenderer()->makeLink(
+				$this->getPageTitle( (string)$row->sg_page_id ),
+				$this->msg( 'saintapediasuggest-page-suggestions-link' )->text()
+			);
+			$links .= ' · ' . $this->getLinkRenderer()->makeLink( $title, $title->getPrefixedText() );
+		}
+		$out->addHTML( Html::rawElement( 'p', [ 'class' => 'sps-backlinks' ], $links ) );
+
+		// The row itself, with its action buttons, inside a POST form so a
+		// reviewer can act without going back to the list.
+		$out->addHTML( Html::openElement( 'form', [
+			'method' => 'post',
+			'action' => $this->getPageTitle( 'detail/' . $id )->getLocalURL(),
+			'class'  => 'sps-bulk-form',
+		] ) );
+		$out->addHTML( Html::hidden( 'wpEditToken', $this->getUser()->getEditToken() ) );
+		// Return here after the mutation instead of dropping back to the list.
+		$out->addHTML( Html::hidden( 'sps_detail', (string)$id ) );
+		$out->addHTML( Html::openElement( 'ul', [ 'class' => 'sps-list' ] ) );
+		$out->addHTML( $this->renderRow( $row, true, false ) );
+		$out->addHTML( Html::closeElement( 'ul' ) );
+		$out->addHTML( Html::closeElement( 'form' ) );
+
+		$out->addHTML( $this->renderDuplicates( $id ) );
+		$out->addHTML( $this->renderAuditLog( $id ) );
+	}
+
+	/**
+	 * The other readers who reported the same value. Their free text is
+	 * shown because a second reporter often supplies the source the first
+	 * one omitted.
+	 */
+	private function renderDuplicates( int $id ): string {
+		$duplicates = $this->store->getDuplicates( $id );
+		if ( !$duplicates ) {
+			return '';
+		}
+
+		$lang = $this->getLanguage();
+		$user = $this->getUser();
+
+		$items = '';
+		foreach ( $duplicates as $dup ) {
+			$line = Html::element( 'span', [ 'class' => 'sps-time' ],
+				$lang->userTimeAndDate( (string)$dup->sg_timestamp, $user ) );
+			$line .= ' ' . Html::element( 'span', [ 'class' => 'sps-dup-value' ],
+				(string)$dup->sg_suggested_value );
+			if ( (string)( $dup->sg_comment ?? '' ) !== '' ) {
+				$line .= Html::element( 'div', [ 'class' => 'sps-comment' ], (string)$dup->sg_comment );
+			}
+			$items .= Html::rawElement( 'li', [ 'class' => 'sps-dup-item' ], $line );
+		}
+
+		return Html::rawElement( 'div', [ 'class' => 'sps-duplicates' ],
+			Html::element( 'h3', [],
+				$this->msg( 'saintapediasuggest-duplicates-heading' )
+					->numParams( count( $duplicates ) )->text() )
+			. Html::rawElement( 'ul', [ 'class' => 'sps-dup-list' ], $items )
+		);
+	}
+
+	/**
+	 * Full status history for one suggestion, oldest first.
+	 */
+	private function renderAuditLog( int $id ): string {
+		$entries = $this->store->getStatusLog( $id );
+
+		$heading = Html::element( 'h3', [], $this->msg( 'saintapediasuggest-audit-heading' )->text() );
+		if ( !$entries ) {
+			return Html::rawElement( 'div', [ 'class' => 'sps-audit' ],
+				$heading . Html::element( 'p', [ 'class' => 'sps-empty' ],
+					$this->msg( 'saintapediasuggest-audit-empty' )->text() )
+			);
+		}
+
+		$lang = $this->getLanguage();
+		$viewer = $this->getUser();
+		$userFactory = MediaWikiServices::getInstance()->getUserFactory();
+
+		$rows = '';
+		foreach ( $entries as $entry ) {
+			$actorId = (int)( $entry->slog_user_id ?? 0 );
+			$actor = $actorId > 0 ? $userFactory->newFromId( $actorId ) : null;
+			$actorCell = $actor && $actor->getName() !== ''
+				? $this->getLinkRenderer()->makeLink( $actor->getUserPage(), $actor->getName() )
+				: Html::element( 'span', [ 'class' => 'sps-audit-system' ],
+					$this->msg( 'saintapediasuggest-audit-unknown-user' )->text() );
+
+			$from = (string)( $entry->slog_old_status ?? '' );
+			$transition = ( $from !== ''
+					? $this->msg( 'saintapediasuggest-status-' . $from )->text() . ' → '
+					: '' )
+				. $this->msg( 'saintapediasuggest-status-' . (string)$entry->slog_new_status )->text();
+
+			$rows .= Html::rawElement( 'tr', [],
+				Html::element( 'td', [ 'class' => 'sps-audit-time' ],
+					$lang->userTimeAndDate( (string)$entry->slog_timestamp, $viewer ) )
+				. Html::rawElement( 'td', [ 'class' => 'sps-audit-user' ], $actorCell )
+				. Html::element( 'td', [ 'class' => 'sps-audit-change' ], $transition )
+				. Html::element( 'td', [ 'class' => 'sps-audit-note' ],
+					(string)( $entry->slog_note ?? '' ) )
+			);
+		}
+
+		$head = Html::rawElement( 'tr', [],
+			Html::element( 'th', [], $this->msg( 'saintapediasuggest-audit-when' )->text() )
+			. Html::element( 'th', [], $this->msg( 'saintapediasuggest-audit-who' )->text() )
+			. Html::element( 'th', [], $this->msg( 'saintapediasuggest-audit-what' )->text() )
+			. Html::element( 'th', [], $this->msg( 'saintapediasuggest-audit-note' )->text() )
+		);
+
+		return Html::rawElement( 'div', [ 'class' => 'sps-audit' ],
+			$heading
+			. Html::rawElement( 'table', [ 'class' => 'wikitable sps-audit-table' ],
+				Html::rawElement( 'thead', [], $head )
+				. Html::rawElement( 'tbody', [], $rows )
+			)
+		);
+	}
+
 	/* ----------------------------------------------------------- mutations */
 
 	/** @return bool True when the request was handled and a redirect issued. */
@@ -293,9 +494,14 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 		$query = $this->filtersToQuery( $this->getFiltersFromRequest(), $flash );
 		unset( $query['pageid'] );
 
-		$target = $pageId > 0
-			? $this->getPageTitle( (string)$pageId )
-			: $this->getPageTitle();
+		$detailId = (int)$request->getInt( 'sps_detail' );
+		if ( $detailId > 0 ) {
+			$target = $this->getPageTitle( 'detail/' . $detailId );
+		} elseif ( $pageId > 0 ) {
+			$target = $this->getPageTitle( (string)$pageId );
+		} else {
+			$target = $this->getPageTitle();
+		}
 
 		$this->getOutput()->redirect( $target->getFullURL( $query ) );
 	}
@@ -562,6 +768,38 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 		);
 	}
 
+	/**
+	 * Jump straight to one article's suggestions by title.
+	 *
+	 * Uses its own submit name (sps_goto) so the filter form's "Apply" cannot
+	 * be mistaken for a lookup.
+	 */
+	private function renderPageLookupForm(): string {
+		$inner = Html::element( 'label', [ 'for' => 'sps-pagename' ],
+				$this->msg( 'saintapediasuggest-lookup-label' )->text() )
+			. Html::element( 'input', [
+				'type'        => 'text',
+				'id'          => 'sps-pagename',
+				'name'        => 'pagename',
+				'placeholder' => $this->msg( 'saintapediasuggest-lookup-placeholder' )->text(),
+			] )
+			. Html::element(
+				'button',
+				[ 'type' => 'submit', 'name' => 'sps_goto', 'value' => '1' ],
+				$this->msg( 'saintapediasuggest-lookup-go' )->text()
+			);
+
+		return Html::rawElement(
+			'form',
+			[
+				'method' => 'get',
+				'action' => $this->getPageTitle()->getLocalURL(),
+				'class'  => 'sps-lookup',
+			],
+			$inner
+		);
+	}
+
 	private function renderBulkToolbar(): string {
 		$buttons = '';
 		foreach ( SuggestFilters::processActions() as $action ) {
@@ -595,10 +833,11 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 	 * One suggestion. Every value here originates from a reader, so all of it
 	 * goes through Html::element / ->text() and never rawElement.
 	 */
-	private function renderRow( object $row, bool $showPage ): string {
+	private function renderRow( object $row, bool $showPage, bool $linkToDetail = true ): string {
 		$id = (int)$row->sg_id;
 		$lang = $this->getLanguage();
 		$user = $this->getUser();
+		$duplicateCount = (int)( $row->sg_duplicate_count ?? 0 );
 
 		$header = Html::element( 'input', [
 			'type'  => 'checkbox',
@@ -623,8 +862,27 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 			}
 		}
 
+		// "+3 more readers reported this" — corroboration is the strongest
+		// triage signal a reviewer has, so it sits next to the target.
+		if ( $duplicateCount > 0 ) {
+			$header .= Html::element(
+				'span',
+				[ 'class' => 'sps-dup-badge' ],
+				$this->msg( 'saintapediasuggest-duplicate-badge' )
+					->numParams( $duplicateCount )->text()
+			);
+		}
+
 		$header .= Html::element( 'span', [ 'class' => 'sps-time' ],
 			$lang->userTimeAndDate( (string)$row->sg_timestamp, $user ) );
+
+		if ( $linkToDetail ) {
+			$header .= ' ' . $this->getLinkRenderer()->makeLink(
+				$this->getPageTitle( 'detail/' . $id ),
+				$this->msg( 'saintapediasuggest-detail-link' )->text(),
+				[ 'class' => 'sps-detail-link' ]
+			);
+		}
 
 		$body = Html::rawElement( 'div', [ 'class' => 'sps-values' ],
 			Html::element( 'div', [ 'class' => 'sps-value sps-value-current' ],

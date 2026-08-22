@@ -1,6 +1,6 @@
 {
 	"name": "SaintapediaSuggest",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"author": [
 		"Saintapedia contributors"
 	],
@@ -144,6 +144,9 @@
 	"ServiceWiringFiles": [
 		"includes/ServiceWiring.php"
 	],
+	"ConfigRegistry": {
+		"SaintapediaSuggest": "GlobalVarConfig::newInstance"
+	},
 	"config": {
 		"SaintapediaSuggestMode": {
 			"value": "public",
@@ -244,6 +247,22 @@
 		"SaintapediaSuggestEnabled": {
 			"value": true,
 			"description": "Master switch for the reader-facing widget. The dashboard stays reachable when this is false."
+		},
+		"SaintapediaSuggestWebhook": {
+			"value": "",
+			"description": "HTTPS URL that receives POST JSON {count,items} of pending suggestions from maintenance/ProcessSuggestions.php. Empty disables the script unless --webhook is passed. HTTP is refused."
+		},
+		"SaintapediaSuggestWebhookToken": {
+			"value": "",
+			"description": "Optional Bearer token sent as Authorization when posting the batch. Keep in LocalSettings / env, never on a wiki page."
+		},
+		"SaintapediaSuggestBatchSize": {
+			"value": 100,
+			"description": "Default number of pending suggestions posted per ProcessSuggestions.php run (max 500)."
+		},
+		"SaintapediaSuggestMergeDuplicates": {
+			"value": true,
+			"description": "Fold repeat reports of the same value for the same field into one queue item, counted on the canonical row. Set false to keep every submission as its own dashboard entry."
 		}
 	},
 	"manifest_version": 2

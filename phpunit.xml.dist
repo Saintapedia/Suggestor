@@ -1,4 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+	Standalone unit suite: the pure, service-free helpers. Runs anywhere PHP
+	and PHPUnit are available, with no MediaWiki install and no database.
+
+		phpunit -c phpunit.xml.dist
+
+	The integration suite under tests/phpunit/integration/ is deliberately NOT
+	listed here. Those tests extend MediaWikiIntegrationTestCase / ApiTestCase
+	and must run through MediaWiki's own runner, which needs MediaWiki's
+	require-dev packages installed. From a MediaWiki checkout:
+
+		composer phpunit
+
+	restricted to the SaintapediaSuggest group. Production images (Canasta
+	among them) ship without those dev dependencies, so the integration suite
+	cannot run on a production-style container until they are installed.
+-->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.5/phpunit.xsd"
 	bootstrap="tests/phpunit/bootstrap.php"
