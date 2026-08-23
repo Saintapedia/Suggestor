@@ -25,6 +25,9 @@
 	"TestAutoloadNamespaces": {
 		"MediaWiki\\Extension\\SaintapediaSuggest\\Tests\\": "tests/phpunit/"
 	},
+	"TestAutoloadClasses": {
+		"MediaWiki\\Extension\\SaintapediaSuggest\\Tests\\Integration\\CargoFixtureTrait": "tests/phpunit/integration/CargoFixtureTrait.php"
+	},
 	"APIModules": {
 		"saintapediasuggest": {
 			"class": "MediaWiki\\Extension\\SaintapediaSuggest\\Api\\ApiSaintapediaSuggestSubmit",

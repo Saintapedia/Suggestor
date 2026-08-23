@@ -4,6 +4,7 @@ namespace MediaWiki\Extension\SaintapediaSuggest\Tests\Integration;
 
 use ApiTestCase;
 use ApiUsageException;
+use MediaWiki\Block\DatabaseBlock;
 use MediaWiki\MediaWikiServices;
 
 /**
@@ -24,13 +25,21 @@ use MediaWiki\MediaWikiServices;
  */
 class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 
-	private const TABLE = 'SuggestTestTable';
+	use CargoFixtureTrait;
+
+	private const TABLE = self::FIXTURE_TABLE;
+
+	/** Set by existingPageId() so the Cargo row points at a real page. */
+	private ?int $pageId = null;
 
 	protected function setUp(): void {
 		parent::setUp();
 		$this->tablesUsed[] = 'sps_suggestion';
 		$this->tablesUsed[] = 'sps_suggestion_log';
 		$this->tablesUsed[] = 'page';
+		$this->tablesUsed[] = 'ipblocks';
+		$this->tablesUsed[] = 'cargo_tables';
+		$this->tablesUsed[] = 'cargo_pages';
 
 		$this->overrideConfigValues( [
 			'SaintapediaSuggestRequireCaptcha' => false,
@@ -39,13 +48,23 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 			'SaintapediaSuggestNamespaces'     => [ NS_MAIN ],
 			'SaintapediaSuggestRateLimit'      => 50,
 			'SaintapediaSuggestMaxValueLength' => 500,
-			'SaintapediaSuggestTables'         => [ self::TABLE => [ 'Phone' ] ],
+			'SaintapediaSuggestTables'         => [ self::TABLE => [ 'Name', 'City', 'Location' ] ],
 			'SaintapediaSuggestMergeDuplicates' => true,
 		] );
+
+		// A real Cargo row for a real page, so the submit path can snapshot a
+		// current value instead of bailing out before it gets there.
+		$this->createCargoFixture( $this->existingPageId() );
+	}
+
+	protected function tearDown(): void {
+		$this->dropCargoFixture();
+		parent::tearDown();
 	}
 
 	private function existingPageId(): int {
-		return $this->getExistingTestPage( 'SaintapediaSuggest test page' )->getId();
+		$this->pageId ??= $this->getExistingTestPage( 'SaintapediaSuggest test page' )->getId();
+		return $this->pageId;
 	}
 
 	/**
@@ -57,32 +76,23 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 		);
 	}
 
+	/**
+	 * Assert the submit was refused with a specific API error code.
+	 *
+	 * Uses ApiTestCase::apiExceptionHasCode(), which is the framework's own
+	 * static helper — an identically named instance method here would
+	 * collide with it fatally at class-load time.
+	 */
 	private function assertRefusedWith( string $code, array $params ): void {
 		try {
 			$this->submit( $params );
 			$this->fail( "Expected the API to refuse with '$code'." );
 		} catch ( ApiUsageException $e ) {
 			$this->assertTrue(
-				$e->getStatusValue()->hasMessage( $this->messageKeyFor( $code ) )
-					|| $this->apiExceptionHasCode( $e, $code ),
+				self::apiExceptionHasCode( $e, $code ),
 				"Expected error code '$code', got: " . $e->getMessage()
 			);
 		}
-	}
-
-	private function messageKeyFor( string $code ): string {
-		return 'saintapediasuggest-error-' . preg_replace( '/^sps-/', '', $code );
-	}
-
-	private function apiExceptionHasCode( ApiUsageException $e, string $code ): bool {
-		foreach ( $e->getStatusValue()->getErrors() as $error ) {
-			$message = $error['message'];
-			$key = is_object( $message ) ? $message->getKey() : (string)$message;
-			if ( strpos( $key, $code ) !== false ) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	public function testTokenIsRequired(): void {
@@ -91,7 +101,7 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 			'action'         => 'saintapediasuggest',
 			'pageid'         => $this->existingPageId(),
 			'table'          => self::TABLE,
-			'field'          => 'Phone',
+			'field'          => 'Name',
 			'suggestedvalue' => '555-0100',
 		] );
 	}
@@ -100,7 +110,7 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 		$this->assertRefusedWith( 'invalidtitle', [
 			'pageid'         => 999999999,
 			'table'          => self::TABLE,
-			'field'          => 'Phone',
+			'field'          => 'Name',
 			'suggestedvalue' => '555-0100',
 		] );
 	}
@@ -110,7 +120,7 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 		$this->assertRefusedWith( 'sps-disabled', [
 			'pageid'         => $this->existingPageId(),
 			'table'          => self::TABLE,
-			'field'          => 'Phone',
+			'field'          => 'Name',
 			'suggestedvalue' => '555-0100',
 		] );
 	}
@@ -120,7 +130,7 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 		$this->assertRefusedWith( 'sps-namespace', [
 			'pageid'         => $this->existingPageId(),
 			'table'          => self::TABLE,
-			'field'          => 'Phone',
+			'field'          => 'Name',
 			'suggestedvalue' => '555-0100',
 		] );
 	}
@@ -138,7 +148,7 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 		$this->assertRefusedWith( 'sps-nofield', [
 			'pageid'         => $this->existingPageId(),
 			'table'          => self::TABLE,
-			'field'          => 'SomeOtherField',
+			'field'          => 'Founded',
 			'suggestedvalue' => 'x',
 		] );
 	}
@@ -147,7 +157,7 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 		$this->assertRefusedWith( 'sps-nofield', [
 			'pageid'         => $this->existingPageId(),
 			'table'          => 'NotAllowListedTable',
-			'field'          => 'Phone',
+			'field'          => 'Name',
 			'suggestedvalue' => 'x',
 		] );
 	}
@@ -161,7 +171,7 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 		$this->assertRefusedWith( 'sps-nofield', [
 			'pageid'         => $this->existingPageId(),
 			'table'          => 'NotAllowListedTable',
-			'field'          => 'Phone',
+			'field'          => 'Name',
 			'suggestedvalue' => 'x',
 		] );
 	}
@@ -171,23 +181,24 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 		$this->submit( [
 			'pageid'         => $this->existingPageId(),
 			'table'          => self::TABLE,
-			'field'          => 'Phone',
+			'field'          => 'Name',
 			'suggestedvalue' => '',
 		] );
 	}
 
+	/**
+	 * Blocked users cannot submit, including under a partial block — the
+	 * module denies on any block, matching core's write-API convention.
+	 */
 	public function testBlockedUserIsRefused(): void {
-		$user = $this->getTestUser()->getUser();
-		$this->getServiceContainer()->getDatabaseBlockStore()->insertBlock(
-			$this->getServiceContainer()->getDatabaseBlockStoreFactory()
-				->getDatabaseBlockStore()
-				->newUnsaved( [
-					'targetUser' => $user,
-					'by'         => $this->getTestSysop()->getUser(),
-					'reason'     => 'SaintapediaSuggest test',
-					'expiry'     => 'infinity',
-				] )
-		);
+		$blocked = $this->getMutableTestUser()->getUser();
+		$block = new DatabaseBlock( [
+			'address' => $blocked->getName(),
+			'by'      => $this->getTestSysop()->getUser(),
+			'reason'  => 'SaintapediaSuggest test',
+			'expiry'  => 'infinity',
+		] );
+		$this->getServiceContainer()->getDatabaseBlockStore()->insertBlock( $block );
 
 		$this->expectException( ApiUsageException::class );
 		$this->doApiRequestWithToken(
@@ -195,39 +206,107 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 				'action'         => 'saintapediasuggest',
 				'pageid'         => $this->existingPageId(),
 				'table'          => self::TABLE,
-				'field'          => 'Phone',
+				'field'          => 'Name',
 				'suggestedvalue' => '555-0100',
 			],
 			null,
-			$user
+			$blocked
 		);
 	}
 
 	/**
-	 * The public API must never echo a stored contact email back.
+	 * The public API must never echo anything back beyond a result and an id
+	 * — this endpoint is readable by anyone.
 	 */
 	public function testResponseCarriesOnlyResultAndId(): void {
-		// Requires a real Cargo row, so only assert the shape when the
-		// allow-listed table genuinely resolves on this wiki.
-		$registry = MediaWikiServices::getInstance()
-			->getService( 'SaintapediaSuggest.CargoFieldRegistry' );
-		if ( !$registry->isAllowed( self::TABLE, 'Phone' ) ) {
-			$this->markTestSkipped(
-				'No live Cargo table named ' . self::TABLE . '; submit-path shape is '
-				. 'covered end-to-end against real Cargo data on the dev wiki.'
-			);
-		}
-
 		[ $result ] = $this->submit( [
 			'pageid'         => $this->existingPageId(),
 			'table'          => self::TABLE,
-			'field'          => 'Phone',
-			'suggestedvalue' => '555-0100',
+			'field'          => 'Name',
+			'suggestedvalue' => 'St. Corrected',
+			'email'          => 'reader@example.org',
 		] );
 
-		$this->assertSame(
-			[ 'result', 'id' ],
-			array_keys( $result['saintapediasuggest'] )
-		);
+		$this->assertSame( [ 'result', 'id' ], array_keys( $result['saintapediasuggest'] ) );
+		$this->assertSame( 'success', $result['saintapediasuggest']['result'] );
+		$this->assertStringNotContainsString( 'reader@example.org', json_encode( $result ) );
+	}
+
+	/**
+	 * The stored snapshot must be re-read from Cargo, never taken from the
+	 * request — otherwise a submitter could fabricate the before-state a
+	 * reviewer sees.
+	 */
+	public function testCurrentValueIsSnapshottedFromCargo(): void {
+		[ $result ] = $this->submit( [
+			'pageid'         => $this->existingPageId(),
+			'table'          => self::TABLE,
+			'field'          => 'Name',
+			'suggestedvalue' => 'St. Corrected',
+		] );
+
+		$store = MediaWikiServices::getInstance()
+			->getService( 'SaintapediaSuggest.SuggestionStore' );
+		$row = $store->getById( (int)$result['saintapediasuggest']['id'] );
+
+		$this->assertSame( 'St. Fixture', (string)$row->sg_current_value );
+		$this->assertSame( 'St. Corrected', (string)$row->sg_suggested_value );
+		$this->assertSame( self::TABLE, (string)$row->sg_cargo_table );
+	}
+
+	/**
+	 * A Coordinates field has no column under its own name; the submit path
+	 * must still resolve its current value from the `__full` column.
+	 */
+	public function testCoordinatesFieldCanBeSuggested(): void {
+		[ $result ] = $this->submit( [
+			'pageid'         => $this->existingPageId(),
+			'table'          => self::TABLE,
+			'field'          => 'Location',
+			'suggestedvalue' => '33.5700, -86.7300',
+		] );
+
+		$store = MediaWikiServices::getInstance()
+			->getService( 'SaintapediaSuggest.SuggestionStore' );
+		$row = $store->getById( (int)$result['saintapediasuggest']['id'] );
+
+		$this->assertSame( '33.56557, -86.72564', (string)$row->sg_current_value );
+	}
+
+	public function testResubmittingTheStoredValueIsRefused(): void {
+		$this->assertRefusedWith( 'sps-unchanged', [
+			'pageid'         => $this->existingPageId(),
+			'table'          => self::TABLE,
+			'field'          => 'Name',
+			'suggestedvalue' => 'St. Fixture',
+		] );
+	}
+
+	/**
+	 * A second reader proposing the same value joins the first as a duplicate
+	 * rather than opening a second queue item.
+	 */
+	public function testRepeatReportIsFoldedIntoTheFirst(): void {
+		[ $first ] = $this->submit( [
+			'pageid'         => $this->existingPageId(),
+			'table'          => self::TABLE,
+			'field'          => 'Name',
+			'suggestedvalue' => 'St. Corrected',
+		] );
+		[ $second ] = $this->submit( [
+			'pageid'         => $this->existingPageId(),
+			'table'          => self::TABLE,
+			'field'          => 'Name',
+			'suggestedvalue' => '  st.   CORRECTED ',
+		] );
+
+		$store = MediaWikiServices::getInstance()
+			->getService( 'SaintapediaSuggest.SuggestionStore' );
+		$firstId = (int)$first['saintapediasuggest']['id'];
+		$secondId = (int)$second['saintapediasuggest']['id'];
+
+		$this->assertSame( $firstId, (int)$store->getById( $secondId )->sg_duplicate_of );
+		$this->assertSame( 1, (int)$store->getById( $firstId )->sg_duplicate_count );
+		$this->assertSame( 1, $store->countDashboard( [ 'status' => 'all' ] ) );
 	}
 }

@@ -274,7 +274,14 @@ class SuggestionStoreTest extends MediaWikiIntegrationTestCase {
 		$id = $this->store->insert( $this->row( [ 'contactEmail' => 'reader@example.org' ] ) );
 
 		$rows = $this->store->getDashboard( [ 'status' => 'all' ] );
-		$this->assertObjectNotHasAttribute( 'sg_contact_email', $rows[0] );
+		// property_exists rather than assertObjectNotHasAttribute(): that
+		// assertion is deprecated in PHPUnit 9.6 and gone in 10, and its
+		// replacement does not exist in older 9.x.
+		$this->assertFalse(
+			property_exists( $rows[0], 'sg_contact_email' ),
+			'List queries must not materialize the contact email column'
+		);
+		$this->assertFalse( property_exists( $rows[0], 'sg_ip_hash' ) );
 
 		// …but are reachable through the dedicated, right-gated accessor.
 		$this->assertSame(

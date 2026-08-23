@@ -398,17 +398,27 @@ fail-closed path.
 ```bash
 # Integration — needs a MediaWiki checkout with its require-dev packages
 cd /path/to/mediawiki
-composer phpunit    # restricted to the SaintapediaSuggest group
+php vendor/bin/phpunit --group SaintapediaSuggest
 ```
 
-Covers `SuggestionStore` against a real database (rate-limit locking, duplicate
-folding, audit entries, the per-page mutation guard, search escaping, email
-column exclusion, batch marking), `CargoFieldRegistry` against a live Cargo
-install, and the submit API's refusal ordering.
+56 tests covering `SuggestionStore` against a real database (rate-limit locking,
+duplicate folding, audit entries, the per-page mutation guard, search escaping,
+contact-email column exclusion, batch marking), `CargoFieldRegistry` against a
+real Cargo schema, and the submit API end to end — refusal ordering, the
+server-side snapshot, Coordinates fields, and duplicate folding through HTTP.
+
+**The Cargo tests build their own fixture** (`CargoFixtureTrait`) rather than
+reading whatever the wiki contains. MediaWiki's test framework clones tables
+into a prefixed test database, so pre-existing Cargo content is invisible — a
+content-dependent suite silently skips every one of its assertions and looks
+like it passed. The fixture declares one field of each Cargo layout, including
+a list field and a Coordinates field, which are the two that have no column
+under their own name.
 
 > Production images — Canasta included — ship **without** MediaWiki's
-> `require-dev` packages, so the integration suite cannot run on one until those
-> are installed. On such a wiki, exercise the same paths over HTTP instead.
+> `require-dev` packages, so the integration suite cannot start on one. Use a
+> separate checkout (`composer install`, a scratch database, `wfLoadExtension`
+> for Cargo and this extension) rather than adding dev packages to a live wiki.
 
 ---
 

@@ -2,6 +2,7 @@
 
 namespace MediaWiki\Extension\SaintapediaSuggest\Tests\Integration;
 
+use CargoUtils;
 use HashConfig;
 use MediaWiki\Extension\SaintapediaSuggest\Cargo\CargoFieldRegistry;
 use MediaWiki\MediaWikiServices;
@@ -9,11 +10,24 @@ use MediaWiki\Registration\ExtensionRegistry;
 use MediaWikiIntegrationTestCase;
 
 /**
- * CargoFieldRegistry against a live Cargo install.
+ * CargoFieldRegistry against a real Cargo schema.
  *
- * Skipped when Cargo is absent, and skipped per-test when the wiki has no
- * Cargo table to exercise — these assertions are about how this extension
- * talks to Cargo, not about any particular wiki's content.
+ * The fixture is built here rather than read from whatever the wiki happens to
+ * contain. MediaWiki's test framework clones tables into a prefixed test
+ * database, so any pre-existing Cargo content is invisible to these tests —
+ * depending on it produced a suite that silently skipped everything.
+ *
+ * The fixture deliberately covers each way Cargo lays a field out:
+ *
+ *   Name      String        -> column `Name`
+ *   City      Page          -> column `City`
+ *   Founded   Date          -> columns `Founded` and `Founded__precision`
+ *   Aliases   List of String-> column `Aliases__full` and a helper table
+ *   Location  Coordinates   -> columns `Location__full`, `__lat`, `__lon`
+ *
+ * The last two are the ones that matter: they have NO column under their own
+ * name, so selecting one by its bare schema name raises "Unknown column" and
+ * takes every suggestion for the whole table down with it.
  *
  * @group Database
  * @group SaintapediaSuggest
@@ -21,61 +35,59 @@ use MediaWikiIntegrationTestCase;
  */
 class CargoFieldRegistryIntegrationTest extends MediaWikiIntegrationTestCase {
 
+	use CargoFixtureTrait;
+
+	private const TABLE = self::FIXTURE_TABLE;
+
+	private const PAGE_ID = self::FIXTURE_PAGE_ID;
+
 	protected function setUp(): void {
 		parent::setUp();
+
 		if ( !ExtensionRegistry::getInstance()->isLoaded( 'Cargo' ) ) {
 			$this->markTestSkipped( 'Cargo is not installed on this wiki.' );
 		}
+
+		// cargo_tables / cargo_pages live in the wiki database, so the test
+		// framework clones them and rolls them back for us.
+		$this->tablesUsed[] = 'cargo_tables';
+		$this->tablesUsed[] = 'cargo_pages';
+
+		$this->createCargoFixture();
+	}
+
+	protected function tearDown(): void {
+		$this->dropCargoFixture();
+		parent::tearDown();
 	}
 
 	/**
 	 * @param array<string,mixed> $tables
+	 * @param array<string,mixed> $extra
 	 */
-	private function registry( array $tables ): CargoFieldRegistry {
+	private function registry( array $tables, array $extra = [] ): CargoFieldRegistry {
 		return new CargoFieldRegistry(
-			new HashConfig( [
-				'SaintapediaSuggestTables' => $tables,
-				'SaintapediaSuggestMaxFields' => 40,
+			new HashConfig( $extra + [
+				'SaintapediaSuggestTables'         => $tables,
+				'SaintapediaSuggestMaxFields'      => 40,
 				'SaintapediaSuggestMaxValueLength' => 500,
 			] ),
 			MediaWikiServices::getInstance()->getDBLoadBalancer()
 		);
 	}
 
-	/**
-	 * First Cargo table on this wiki that actually holds a row, with the page
-	 * id that owns it. Returns null when the wiki has no Cargo data.
-	 *
-	 * @return array{0:string,1:int}|null
-	 */
-	private function findPopulatedTable(): ?array {
-		$dbr = $this->getDb();
-		if ( !$dbr->tableExists( 'cargo_pages', __METHOD__ ) ) {
-			return null;
-		}
-		$row = $dbr->selectRow(
-			'cargo_pages',
-			[ 'page_id', 'table_name' ],
-			[],
-			__METHOD__,
-			[ 'ORDER BY' => 'page_id ASC' ]
-		);
-		if ( !$row ) {
-			return null;
-		}
-		return [ (string)$row->table_name, (int)$row->page_id ];
+	private function allowAll(): CargoFieldRegistry {
+		return $this->registry( [ self::TABLE => '*' ] );
 	}
 
-	/**
-	 * @return array{0:CargoFieldRegistry,1:string,2:int}
-	 */
-	private function populatedRegistry(): array {
-		$found = $this->findPopulatedTable();
-		if ( !$found ) {
-			$this->markTestSkipped( 'This wiki has no Cargo data to exercise.' );
-		}
-		[ $table, $pageId ] = $found;
-		return [ $this->registry( [ $table => '*' ] ), $table, $pageId ];
+	public function testFixtureIsVisibleToCargo(): void {
+		$this->assertContains( self::TABLE, CargoUtils::getTables() );
+		$schemas = CargoUtils::getTableSchemas( [ self::TABLE ] );
+		$this->assertArrayHasKey( self::TABLE, $schemas );
+		$this->assertSame(
+			[ 'Name', 'City', 'Founded', 'Aliases', 'Location' ],
+			array_keys( $schemas[self::TABLE]->mFieldDescriptions )
+		);
 	}
 
 	public function testCargoIsDetected(): void {
@@ -83,76 +95,119 @@ class CargoFieldRegistryIntegrationTest extends MediaWikiIntegrationTestCase {
 	}
 
 	public function testEmptyAllowListExposesNothing(): void {
-		$found = $this->findPopulatedTable();
-		if ( !$found ) {
-			$this->markTestSkipped( 'This wiki has no Cargo data to exercise.' );
-		}
-		[ , $pageId ] = $found;
-
 		$registry = $this->registry( [] );
-		$this->assertSame( [], $registry->getTablesForPage( $pageId ) );
-		$this->assertSame( [], $registry->getSuggestableFields( $pageId ) );
+		$this->assertSame( [], $registry->getTablesForPage( self::PAGE_ID ) );
+		$this->assertSame( [], $registry->getSuggestableFields( self::PAGE_ID ) );
+		$this->assertFalse( $registry->isAllowed( self::TABLE, 'Name' ) );
 	}
 
 	public function testAllowListedTableIsFoundForItsPage(): void {
-		[ $registry, $table, $pageId ] = $this->populatedRegistry();
-		$this->assertContains( $table, $registry->getTablesForPage( $pageId ) );
+		$this->assertSame( [ self::TABLE ], $this->allowAll()->getTablesForPage( self::PAGE_ID ) );
+	}
+
+	public function testWildcardExposesEveryNonInternalField(): void {
+		$this->assertSame(
+			[ 'Name', 'City', 'Founded', 'Aliases', 'Location' ],
+			$this->allowAll()->getAllowedFields( self::TABLE )
+		);
+	}
+
+	public function testExplicitAllowListLimitsToNamedFields(): void {
+		$registry = $this->registry( [ self::TABLE => [ 'Name', 'Location' ] ] );
+		$this->assertSame( [ 'Name', 'Location' ], $registry->getAllowedFields( self::TABLE ) );
+		$this->assertTrue( $registry->isAllowed( self::TABLE, 'Name' ) );
+		$this->assertFalse( $registry->isAllowed( self::TABLE, 'City' ) );
 	}
 
 	/**
-	 * The point of the allow-list: an admin cannot expose Cargo's internal
-	 * bookkeeping columns, not even with the '*' wildcard.
+	 * The point of the allow-list: Cargo's internal bookkeeping columns are
+	 * never exposed, not even under the '*' wildcard.
 	 */
 	public function testReservedColumnsAreNeverExposed(): void {
-		[ $registry, $table, $pageId ] = $this->populatedRegistry();
+		$registry = $this->allowAll();
 
-		foreach ( $registry->getAllowedFields( $table ) as $field ) {
+		foreach ( $registry->getAllowedFields( self::TABLE ) as $field ) {
 			$this->assertStringStartsNotWith( '_', $field );
 		}
-		foreach ( $registry->getSuggestableFields( $pageId ) as $entry ) {
-			$this->assertStringStartsNotWith( '_', $entry['field'] );
+		foreach ( [ '_pageID', '_pageName', '_ID', '_pageNamespace' ] as $reserved ) {
+			$this->assertFalse( $registry->isAllowed( self::TABLE, $reserved ), $reserved );
+			$this->assertNull( $registry->getCurrentValue( self::PAGE_ID, self::TABLE, $reserved ) );
 		}
-		$this->assertFalse( $registry->isAllowed( $table, '_pageID' ) );
-		$this->assertFalse( $registry->isAllowed( $table, '_pageName' ) );
-		$this->assertNull( $registry->getCurrentValue( $pageId, $table, '_pageID' ) );
+	}
+
+	public function testReservedColumnsCannotBeAllowListedExplicitly(): void {
+		$registry = $this->registry( [ self::TABLE => [ '_pageID', 'Name' ] ] );
+		$this->assertSame( [ 'Name' ], $registry->getAllowedFields( self::TABLE ) );
+		$this->assertFalse( $registry->isAllowed( self::TABLE, '_pageID' ) );
 	}
 
 	public function testUnknownTableAndFieldAreRefused(): void {
-		[ $registry, $table, $pageId ] = $this->populatedRegistry();
-
+		$registry = $this->allowAll();
 		$this->assertFalse( $registry->isAllowed( 'NoSuchCargoTable', 'Whatever' ) );
-		$this->assertFalse( $registry->isAllowed( $table, 'NoSuchFieldAtAll' ) );
-		$this->assertNull( $registry->getCurrentValue( $pageId, $table, 'NoSuchFieldAtAll' ) );
+		$this->assertFalse( $registry->isAllowed( self::TABLE, 'NoSuchFieldAtAll' ) );
+		$this->assertNull(
+			$registry->getCurrentValue( self::PAGE_ID, self::TABLE, 'NoSuchFieldAtAll' )
+		);
 	}
 
 	/**
-	 * Every field the registry offers must be readable. This is the
-	 * regression guard for Cargo's `__full` columns: list and Coordinates
-	 * fields have no plain column, and selecting one by its bare schema name
-	 * raises "Unknown column" and takes the whole table down with it.
+	 * A field allow-listed in config but since removed from the template must
+	 * drop out silently rather than reaching the database as an identifier.
+	 */
+	public function testFieldNotInTheLiveSchemaIsDropped(): void {
+		$registry = $this->registry( [ self::TABLE => [ 'Name', 'RemovedFromTemplate' ] ] );
+		$this->assertSame( [ 'Name' ], $registry->getAllowedFields( self::TABLE ) );
+	}
+
+	/**
+	 * The regression guard. Every field the registry offers must actually be
+	 * readable — list and Coordinates fields live in `__full` columns and have
+	 * no column under their own name.
 	 */
 	public function testEverySuggestableFieldIsActuallyReadable(): void {
-		[ $registry, $table, $pageId ] = $this->populatedRegistry();
-
-		$fields = $registry->getSuggestableFields( $pageId );
-		if ( !$fields ) {
-			$this->markTestSkipped( "No suggestable fields on $table for page $pageId." );
-		}
+		$registry = $this->allowAll();
+		$fields = $registry->getSuggestableFields( self::PAGE_ID );
+		$this->assertCount( 5, $fields );
 
 		foreach ( $fields as $entry ) {
 			$this->assertIsString( $entry['value'], "{$entry['field']} returned a non-string" );
 			$this->assertSame(
 				$entry['value'],
-				$registry->getCurrentValue( $pageId, $table, $entry['field'] ),
+				$registry->getCurrentValue( self::PAGE_ID, self::TABLE, $entry['field'] ),
 				"getCurrentValue disagrees with getSuggestableFields for {$entry['field']}"
 			);
 		}
 	}
 
-	public function testPhysicalColumnMatchesCargosLayout(): void {
-		[ $registry, $table, $pageId ] = $this->populatedRegistry();
+	public function testValuesComeFromTheRightPhysicalColumns(): void {
+		$byField = [];
+		foreach ( $this->allowAll()->getSuggestableFields( self::PAGE_ID ) as $entry ) {
+			$byField[$entry['field']] = $entry;
+		}
 
-		foreach ( $registry->getSuggestableFields( $pageId ) as $entry ) {
+		$this->assertSame( 'St. Fixture', $byField['Name']['value'] );
+		$this->assertSame( 'Birmingham, AL', $byField['City']['value'] );
+		$this->assertSame( '1908-01-01', $byField['Founded']['value'] );
+		// Read from Aliases__full, not a (nonexistent) Aliases column.
+		$this->assertSame( 'St Fixture,Saint Fixture', $byField['Aliases']['value'] );
+		// Read from Location__full, not Location / __lat / __lon.
+		$this->assertSame( '33.56557, -86.72564', $byField['Location']['value'] );
+	}
+
+	public function testTypeAndListFlagsAreReported(): void {
+		$byField = [];
+		foreach ( $this->allowAll()->getSuggestableFields( self::PAGE_ID ) as $entry ) {
+			$byField[$entry['field']] = $entry;
+		}
+
+		$this->assertTrue( $byField['Aliases']['isList'] );
+		$this->assertFalse( $byField['Location']['isList'] );
+		$this->assertSame( 'Coordinates', $byField['Location']['type'] );
+		$this->assertSame( 'String', $byField['Name']['type'] );
+	}
+
+	public function testPhysicalColumnMatchesCargosLayout(): void {
+		foreach ( $this->allowAll()->getSuggestableFields( self::PAGE_ID ) as $entry ) {
 			$expected = ( $entry['isList'] || $entry['type'] === 'Coordinates' )
 				? $entry['field'] . '__full'
 				: $entry['field'];
@@ -167,48 +222,40 @@ class CargoFieldRegistryIntegrationTest extends MediaWikiIntegrationTestCase {
 	}
 
 	public function testPageWithoutACargoRowYieldsNothing(): void {
-		[ $registry, $table ] = $this->populatedRegistry();
-		$absent = 999999999;
+		$registry = $this->allowAll();
+		$absent = self::PAGE_ID + 1;
 		$this->assertSame( [], $registry->getTablesForPage( $absent ) );
 		$this->assertSame( [], $registry->getSuggestableFields( $absent ) );
-		$this->assertNull( $registry->getCurrentValue( $absent, $table, 'Anything' ) );
+		$this->assertNull( $registry->getCurrentValue( $absent, self::TABLE, 'Name' ) );
 	}
 
 	public function testMaxFieldsIsHonoured(): void {
-		$found = $this->findPopulatedTable();
-		if ( !$found ) {
-			$this->markTestSkipped( 'This wiki has no Cargo data to exercise.' );
-		}
-		[ $table, $pageId ] = $found;
-
-		$registry = new CargoFieldRegistry(
-			new HashConfig( [
-				'SaintapediaSuggestTables' => [ $table => '*' ],
-				'SaintapediaSuggestMaxFields' => 1,
-				'SaintapediaSuggestMaxValueLength' => 500,
-			] ),
-			MediaWikiServices::getInstance()->getDBLoadBalancer()
+		$registry = $this->registry(
+			[ self::TABLE => '*' ],
+			[ 'SaintapediaSuggestMaxFields' => 2 ]
 		);
-		$this->assertLessThanOrEqual( 1, count( $registry->getSuggestableFields( $pageId ) ) );
+		$this->assertCount( 2, $registry->getSuggestableFields( self::PAGE_ID ) );
+	}
+
+	public function testMaxFieldsOfZeroExposesNothing(): void {
+		$registry = $this->registry(
+			[ self::TABLE => '*' ],
+			[ 'SaintapediaSuggestMaxFields' => 0 ]
+		);
+		$this->assertSame( [], $registry->getSuggestableFields( self::PAGE_ID ) );
 	}
 
 	public function testValuesAreClampedToTheConfiguredLength(): void {
-		$found = $this->findPopulatedTable();
-		if ( !$found ) {
-			$this->markTestSkipped( 'This wiki has no Cargo data to exercise.' );
-		}
-		[ $table, $pageId ] = $found;
-
-		$registry = new CargoFieldRegistry(
-			new HashConfig( [
-				'SaintapediaSuggestTables' => [ $table => '*' ],
-				'SaintapediaSuggestMaxFields' => 40,
-				'SaintapediaSuggestMaxValueLength' => 5,
-			] ),
-			MediaWikiServices::getInstance()->getDBLoadBalancer()
+		$registry = $this->registry(
+			[ self::TABLE => '*' ],
+			[ 'SaintapediaSuggestMaxValueLength' => 5 ]
 		);
-		foreach ( $registry->getSuggestableFields( $pageId ) as $entry ) {
+		foreach ( $registry->getSuggestableFields( self::PAGE_ID ) as $entry ) {
 			$this->assertLessThanOrEqual( 5, mb_strlen( $entry['value'] ) );
 		}
+		$this->assertSame(
+			'St. F',
+			$registry->getCurrentValue( self::PAGE_ID, self::TABLE, 'Name' )
+		);
 	}
 }
