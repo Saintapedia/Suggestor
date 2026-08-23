@@ -41,6 +41,13 @@ class SchemaHooks implements LoadExtensionSchemaUpdatesHook {
 			$dir . '/patch-batch-processed.sql'
 		);
 
+		// 0.3.0 — which row of a multi-row Cargo table a suggestion targets
+		$updater->addExtensionField(
+			'sps_suggestion',
+			'sg_cargo_row_id',
+			$dir . '/patch-row-id.sql'
+		);
+
 		// Indexes are registered one per patch rather than bundled into the
 		// ALTER above. A bare CREATE INDEX aborts the remainder of its patch
 		// file when the name already exists — which happens on any wiki where

@@ -273,6 +273,75 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 		$this->assertSame( '33.56557, -86.72564', (string)$row->sg_current_value );
 	}
 
+	/* ------------------------------------------------------ multi-row rows */
+
+	public function testRowIdMustBelongToThePageAndTable(): void {
+		$this->createMultiRowCargoFixture( $this->existingPageId() );
+		$this->overrideConfigValue( 'SaintapediaSuggestTables',
+			[ self::FIXTURE_MULTI_TABLE => [ 'EventYear' ] ] );
+
+		$this->assertRefusedWith( 'sps-norow', [
+			'pageid'         => $this->existingPageId(),
+			'table'          => self::FIXTURE_MULTI_TABLE,
+			'field'          => 'EventYear',
+			'rowid'          => 99,
+			'suggestedvalue' => '1800',
+		] );
+	}
+
+	/**
+	 * The snapshot must come from the row the reader named, not from whichever
+	 * row the database returns first — that was the multi-row bug.
+	 */
+	public function testSnapshotComesFromTheNamedRow(): void {
+		$this->createMultiRowCargoFixture( $this->existingPageId() );
+		$this->overrideConfigValue( 'SaintapediaSuggestTables',
+			[ self::FIXTURE_MULTI_TABLE => [ 'EventYear', 'LocationTitle' ] ] );
+
+		[ $result ] = $this->submit( [
+			'pageid'         => $this->existingPageId(),
+			'table'          => self::FIXTURE_MULTI_TABLE,
+			'field'          => 'EventYear',
+			'rowid'          => 3,
+			'suggestedvalue' => '1795',
+		] );
+
+		$store = MediaWikiServices::getInstance()
+			->getService( 'SaintapediaSuggest.SuggestionStore' );
+		$row = $store->getById( (int)$result['saintapediasuggest']['id'] );
+
+		$this->assertSame( '1794', (string)$row->sg_current_value, 'row 3, not row 1' );
+		$this->assertSame( 3, (int)$row->sg_cargo_row_id );
+		$this->assertSame(
+			'Seton family home site (State Street area)',
+			(string)$row->sg_cargo_row_label
+		);
+	}
+
+	public function testCorrectionsToDifferentRowsStaySeparate(): void {
+		$this->createMultiRowCargoFixture( $this->existingPageId() );
+		$this->overrideConfigValue( 'SaintapediaSuggestTables',
+			[ self::FIXTURE_MULTI_TABLE => [ 'SiteType' ] ] );
+
+		foreach ( [ 1, 2 ] as $rowId ) {
+			$this->submit( [
+				'pageid'         => $this->existingPageId(),
+				'table'          => self::FIXTURE_MULTI_TABLE,
+				'field'          => 'SiteType',
+				'rowid'          => $rowId,
+				'suggestedvalue' => 'Basilica',
+			] );
+		}
+
+		$store = MediaWikiServices::getInstance()
+			->getService( 'SaintapediaSuggest.SuggestionStore' );
+		$this->assertSame(
+			2,
+			$store->countDashboard( [ 'status' => 'all' ] ),
+			'Same value on two different rows is two problems, not one'
+		);
+	}
+
 	public function testResubmittingTheStoredValueIsRefused(): void {
 		$this->assertRefusedWith( 'sps-unchanged', [
 			'pageid'         => $this->existingPageId(),

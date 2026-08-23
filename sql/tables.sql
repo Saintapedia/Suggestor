@@ -18,6 +18,16 @@ CREATE TABLE IF NOT EXISTS /*_*/sps_suggestion (
 	sg_cargo_table VARBINARY(200) NOT NULL,
 	sg_cargo_field VARBINARY(200) NOT NULL,
 
+	-- Which row of that table. A page may store several rows in one Cargo
+	-- table (three sightings, a list of Mass times), and without this a
+	-- suggestion is ambiguous: the reviewer cannot tell which row the reader
+	-- was looking at. Holds Cargo's own _ID. NULL only for rows written
+	-- before this column existed.
+	sg_cargo_row_id INT UNSIGNED NULL DEFAULT NULL,
+	-- Human label for that row at submit time (e.g. the sighting's title), so
+	-- the dashboard stays readable even if the row is later renumbered.
+	sg_cargo_row_label VARBINARY(255) NULL DEFAULT NULL,
+
 	-- Snapshot of the stored value at submit time, so a reviewer can tell
 	-- whether the underlying data changed since the reader saw it.
 	sg_current_value TEXT NULL DEFAULT NULL,
@@ -70,7 +80,9 @@ CREATE TABLE IF NOT EXISTS /*_*/sps_suggestion (
 	INDEX sps_ip_time (sg_ip_hash, sg_timestamp),
 	INDEX sps_target (sg_cargo_table, sg_cargo_field, sg_status),
 	INDEX sps_user (sg_user_id),
-	-- Narrows the duplicate search to one page's rows for one field
+	-- Narrows the duplicate search to one page's rows for one field.
+	-- Row identity is applied as an extra condition rather than added here:
+	-- this prefix already reduces the candidate set to a handful.
 	INDEX sps_dupe_lookup (sg_page_id, sg_cargo_table, sg_cargo_field, sg_duplicate_of),
 	-- Lists the duplicates folded into one canonical row
 	INDEX sps_duplicate_of (sg_duplicate_of),

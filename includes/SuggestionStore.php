@@ -28,6 +28,8 @@ class SuggestionStore {
 		'sg_page_title',
 		'sg_cargo_table',
 		'sg_cargo_field',
+		'sg_cargo_row_id',
+		'sg_cargo_row_label',
 		'sg_current_value',
 		'sg_suggested_value',
 		'sg_comment',
@@ -89,6 +91,7 @@ class SuggestionStore {
 					(string)$data['cargoTable'],
 					(string)$data['cargoField'],
 					(string)$data['suggestedValue'],
+					$data['cargoRowId'] ?? null,
 					$db
 				);
 			}
@@ -120,6 +123,7 @@ class SuggestionStore {
 		string $cargoTable,
 		string $cargoField,
 		string $suggestedValue,
+		?int $cargoRowId = null,
 		?IDatabase $db = null
 	): ?int {
 		if ( $pageId <= 0 || SuggestionMerger::normalizeValue( $suggestedValue ) === '' ) {
@@ -127,16 +131,22 @@ class SuggestionStore {
 		}
 		$db ??= $this->loadBalancer->getConnection( DB_REPLICA );
 
+		$conds = [
+			'sg_page_id'      => $pageId,
+			'sg_cargo_table'  => $cargoTable,
+			'sg_cargo_field'  => $cargoField,
+			'sg_status'       => SuggestionMerger::OPEN_STATUSES,
+			'sg_duplicate_of' => null,
+		];
+		// Two readers correcting *different* rows to the same value are not
+		// reporting the same problem, so row identity is part of the key.
+		// Legacy rows (NULL row id) only ever match other legacy rows.
+		$conds['sg_cargo_row_id'] = $cargoRowId;
+
 		$rows = $db->select(
 			'sps_suggestion',
 			[ 'sg_id', 'sg_status', 'sg_suggested_value', 'sg_duplicate_of' ],
-			[
-				'sg_page_id'     => $pageId,
-				'sg_cargo_table' => $cargoTable,
-				'sg_cargo_field' => $cargoField,
-				'sg_status'      => SuggestionMerger::OPEN_STATUSES,
-				'sg_duplicate_of' => null,
-			],
+			$conds,
 			__METHOD__,
 			[
 				'ORDER BY' => 'sg_id ASC',
@@ -184,6 +194,8 @@ class SuggestionStore {
 				'sg_page_title'      => $data['title'],
 				'sg_cargo_table'     => $data['cargoTable'],
 				'sg_cargo_field'     => $data['cargoField'],
+				'sg_cargo_row_id'    => $data['cargoRowId'] ?? null,
+				'sg_cargo_row_label' => $data['cargoRowLabel'] ?? null,
 				'sg_current_value'   => $data['currentValue'] ?? null,
 				'sg_suggested_value' => $data['suggestedValue'],
 				'sg_comment'         => $data['comment'] ?? null,

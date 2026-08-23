@@ -27,8 +27,14 @@ trait CargoFixtureTrait {
 
 	private const FIXTURE_PAGE_ID = 4242;
 
+	/** Table whose fixture page deliberately holds several rows. */
+	private const FIXTURE_MULTI_TABLE = 'SuggestMultiRowTable';
+
 	/** Set once the physical table exists, so teardown knows to drop it. */
 	private bool $cargoFixtureCreated = false;
+
+	/** Same, for the multi-row table. */
+	private bool $cargoMultiFixtureCreated = false;
 
 	/**
 	 * Cargo's serialized schema, in the shape
@@ -108,23 +114,96 @@ trait CargoFixtureTrait {
 	}
 
 	/**
-	 * The Cargo data table is reached through CargoUtils::getDB(), which uses
+	 * A second table where the same page stores THREE rows.
+	 *
+	 * This is the shape that made row identity necessary: a saint's page with
+	 * several sightings, or a parish with several Mass times. Without a row
+	 * id, every suggestion against such a table silently referred to whichever
+	 * row the database returned first.
+	 *
+	 * @param int|null $pageId Page the rows belong to
+	 */
+	private function createMultiRowCargoFixture( ?int $pageId = null ): void {
+		$pageId ??= self::FIXTURE_PAGE_ID;
+
+		$cdb = CargoUtils::getDB();
+		$physical = $cdb->tableName( self::FIXTURE_MULTI_TABLE );
+
+		$cdb->query( 'DROP TABLE IF EXISTS ' . $physical, __METHOD__ );
+		$cdb->query(
+			"CREATE TABLE {$physical} (
+				_ID INT NOT NULL,
+				_pageID INT NOT NULL,
+				_pageName VARCHAR(255) NOT NULL,
+				_pageTitle VARCHAR(255) NOT NULL,
+				_pageNamespace INT NOT NULL,
+				LocationTitle VARCHAR(300) NULL,
+				SiteType VARCHAR(300) NULL,
+				EventYear VARCHAR(300) NULL
+			)",
+			__METHOD__
+		);
+		$this->cargoMultiFixtureCreated = true;
+
+		$rows = [
+			[ 1, 'National Shrine of Saint Elizabeth Ann Seton', 'Shrine', '1809' ],
+			[ 2, "St. Peter's Church (Barclay Street)", 'Church', '1805' ],
+			[ 3, 'Seton family home site (State Street area)', 'Home', '1794' ],
+		];
+		foreach ( $rows as [ $id, $title, $type, $year ] ) {
+			$cdb->insert( self::FIXTURE_MULTI_TABLE, [
+				'_ID'            => $id,
+				'_pageID'        => $pageId,
+				'_pageName'      => 'Suggest Fixture Page',
+				'_pageTitle'     => 'Suggest Fixture Page',
+				'_pageNamespace' => NS_MAIN,
+				'LocationTitle'  => $title,
+				'SiteType'       => $type,
+				'EventYear'      => $year,
+			], __METHOD__ );
+		}
+
+		$dbw = $this->getDb();
+		$dbw->insert( 'cargo_tables', [
+			'template_id'         => 1,
+			'main_table'          => self::FIXTURE_MULTI_TABLE,
+			'field_tables'        => serialize( [] ),
+			'field_helper_tables' => serialize( [] ),
+			'table_schema'        => serialize( [
+				'LocationTitle' => [ 'type' => 'String' ],
+				'SiteType'      => [ 'type' => 'String' ],
+				'EventYear'     => [ 'type' => 'String' ],
+			] ),
+		], __METHOD__ );
+
+		$dbw->insert( 'cargo_pages', [
+			'page_id'    => $pageId,
+			'table_name' => self::FIXTURE_MULTI_TABLE,
+		], __METHOD__ );
+	}
+
+	/**
+	 * The Cargo data tables are reached through CargoUtils::getDB(), which uses
 	 * Cargo's own prefix and is therefore NOT part of the cloned test
-	 * database. It has to be dropped explicitly.
+	 * database. They have to be dropped explicitly.
 	 */
 	private function dropCargoFixture(): void {
-		if ( !$this->cargoFixtureCreated ) {
-			return;
+		$tables = [];
+		if ( $this->cargoFixtureCreated ) {
+			$tables[] = self::FIXTURE_TABLE;
 		}
-		try {
-			$cdb = CargoUtils::getDB();
-			$cdb->query(
-				'DROP TABLE IF EXISTS ' . $cdb->tableName( self::FIXTURE_TABLE ),
-				__METHOD__
-			);
-		} catch ( \Throwable $e ) {
-			// Best effort; a leftover fixture table is harmless.
+		if ( $this->cargoMultiFixtureCreated ) {
+			$tables[] = self::FIXTURE_MULTI_TABLE;
+		}
+		foreach ( $tables as $table ) {
+			try {
+				$cdb = CargoUtils::getDB();
+				$cdb->query( 'DROP TABLE IF EXISTS ' . $cdb->tableName( $table ), __METHOD__ );
+			} catch ( \Throwable $e ) {
+				// Best effort; a leftover fixture table is harmless.
+			}
 		}
 		$this->cargoFixtureCreated = false;
+		$this->cargoMultiFixtureCreated = false;
 	}
 }

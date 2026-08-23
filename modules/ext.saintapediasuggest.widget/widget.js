@@ -205,12 +205,67 @@
 			el( 'option', { value: '', text: mw.msg( 'saintapediasuggest-field-placeholder' ) } )
 		] );
 
-		config.fields.forEach( function ( f, i ) {
-			fieldSelect.appendChild( el( 'option', {
-				value: String( i ),
-				text: f.table + ' · ' + f.field
-			} ) );
-		} );
+		/*
+		 * Group the picker so a reader can tell what they are correcting.
+		 *
+		 * A page may hold rows in more than one Cargo table, and more than one
+		 * row in the same table (three sightings on a saint's page). Both get
+		 * their own grouping level, but only when they are actually present:
+		 * on the common one-table one-row page the dropdown is still a flat
+		 * list of field names, with no structure the reader has to read past.
+		 */
+		( function buildFieldOptions() {
+			var tableOrder = [];
+			var byTable = {};
+
+			config.fields.forEach( function ( f, i ) {
+				if ( !byTable[ f.table ] ) {
+					byTable[ f.table ] = { rowOrder: [], rows: {} };
+					tableOrder.push( f.table );
+				}
+				var t = byTable[ f.table ];
+				var key = String( f.rowId );
+				if ( !t.rows[ key ] ) {
+					t.rows[ key ] = { label: f.rowLabel, count: f.rowCount, entries: [] };
+					t.rowOrder.push( key );
+				}
+				t.rows[ key ].entries.push( { index: i, field: f } );
+			} );
+
+			var multipleTables = tableOrder.length > 1;
+
+			tableOrder.forEach( function ( table ) {
+				var t = byTable[ table ];
+				var multipleRows = t.rowOrder.length > 1;
+
+				t.rowOrder.forEach( function ( key ) {
+					var row = t.rows[ key ];
+
+					// Label the group by whichever dimensions actually vary.
+					var groupLabel = null;
+					if ( multipleTables && multipleRows ) {
+						groupLabel = table + ' · ' + row.label;
+					} else if ( multipleRows ) {
+						groupLabel = row.label;
+					} else if ( multipleTables ) {
+						groupLabel = table;
+					}
+
+					var target = fieldSelect;
+					if ( groupLabel !== null ) {
+						target = el( 'optgroup', { label: groupLabel } );
+						fieldSelect.appendChild( target );
+					}
+
+					row.entries.forEach( function ( entry ) {
+						target.appendChild( el( 'option', {
+							value: String( entry.index ),
+							text: entry.field.field
+						} ) );
+					} );
+				} );
+			} );
+		}() );
 
 		var currentValue = el( 'div', { class: 'sps-current' } );
 
@@ -301,8 +356,14 @@
 				currentValue.textContent = '';
 				return;
 			}
-			currentValue.textContent = mw.msg( 'saintapediasuggest-current-label' ) + ' ' +
+			var text = mw.msg( 'saintapediasuggest-current-label' ) + ' ' +
 				( f.value !== '' ? f.value : mw.msg( 'saintapediasuggest-current-empty' ) );
+			// Restate the row when the table has more than one, so the reader
+			// can confirm they picked the entry they were reading.
+			if ( f.rowCount > 1 ) {
+				text += ' — ' + f.rowLabel;
+			}
+			currentValue.textContent = text;
 		}
 
 		fieldSelect.addEventListener( 'change', function () {
@@ -414,6 +475,9 @@
 				field: field.field,
 				suggestedvalue: suggested
 			};
+			if ( field.rowId ) {
+				params.rowid = field.rowId;
+			}
 			if ( commentInput.value.trim() !== '' ) {
 				params.comment = commentInput.value.trim();
 			}
@@ -444,6 +508,8 @@
 					msgKey = 'saintapediasuggest-error-captcha-unavailable';
 				} else if ( code === 'sps-nofield' ) {
 					msgKey = 'saintapediasuggest-error-nofield';
+				} else if ( code === 'sps-norow' ) {
+					msgKey = 'saintapediasuggest-error-norow';
 				} else if ( code === 'sps-novalue' ) {
 					msgKey = 'saintapediasuggest-error-novalue';
 				} else if ( code === 'sps-unchanged' ) {

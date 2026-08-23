@@ -849,6 +849,22 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 		$header .= Html::element( 'span', [ 'class' => 'sps-target' ],
 			(string)$row->sg_cargo_table . '.' . (string)$row->sg_cargo_field );
 
+		// Which row of the table, when the page had more than one. The label
+		// is the one captured at submit time, so it still names what the
+		// reader saw even if the underlying data has since changed.
+		$rowLabel = trim( (string)( $row->sg_cargo_row_label ?? '' ) );
+		if ( $rowLabel !== '' ) {
+			$header .= Html::element(
+				'span',
+				[
+					'class' => 'sps-row-label',
+					'title' => $this->msg( 'saintapediasuggest-row-id-tooltip' )
+						->numParams( (int)( $row->sg_cargo_row_id ?? 0 ) )->text(),
+				],
+				$rowLabel
+			);
+		}
+
 		$header .= Html::element( 'span', [ 'class' => 'sps-status sps-status-' . (string)$row->sg_status ],
 			$this->msg( 'saintapediasuggest-status-' . (string)$row->sg_status )->text() );
 

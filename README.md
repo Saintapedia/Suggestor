@@ -112,6 +112,35 @@ removed from a template since you wrote the allow-list.
 Cargo's own bookkeeping columns (`_pageID`, `_pageName`, `_ID`, …) are **never**
 suggestable — not under `'*'`, and not even if you list them explicitly.
 
+### Pages with several Cargo rows
+
+A page can store more than one row in the same table — three sightings on a
+saint's page, a list of Mass times on a parish. Each row is offered separately
+and a suggestion records which row it targets (Cargo's `_ID`), so a reviewer can
+tell a correction to the third sighting from one to the first.
+
+Rows are named in the picker by the first allow-listed field that has a value.
+When that is not the natural name, say so:
+
+```php
+$wgSaintapediaSuggestRowLabelField = [
+	'Sightings' => 'LocationTitle',
+];
+```
+
+A row whose every candidate field is empty falls back to "Row 3".
+`$wgSaintapediaSuggestMaxRowsPerTable` (default 25) caps how many rows of one
+table a single page may offer.
+
+On the common one-row page none of this is visible: the picker is a flat list of
+field names, exactly as before.
+
+### Pages in several Cargo tables
+
+Also handled. The picker groups by table when a page has rows in more than one,
+and by row when a table has more than one — showing only the levels that
+actually vary, so a simple page stays simple.
+
 ---
 
 ## Public wiki (recommended defaults)
@@ -193,8 +222,11 @@ it is stored as a duplicate of that canonical row, which shows a
 list canonical rows only; the detail view shows every individual report,
 because a second reporter often supplies the source the first one omitted.
 
-Matching is deliberately conservative. It folds case, surrounding and internal
-whitespace, and the Unicode punctuation that phones and copy-paste substitute
+Two readers correcting **different rows** to the same value are not reporting
+the same problem, so row identity is part of the duplicate key.
+
+Matching is otherwise deliberately conservative. It folds case, surrounding and
+internal whitespace, and the Unicode punctuation that phones and copy-paste substitute
 silently (curly apostrophes, en/em dashes, non-breaking spaces). It does **not**
 strip punctuation: `555-0100` and `5550100` are different proposed values and a
 reviewer should see both.
@@ -293,6 +325,8 @@ that belongs under code review.
 | `$wgSaintapediaSuggestNamespaces` | `[ 0 ]` | Where the widget shows and the API accepts submissions |
 | `$wgSaintapediaSuggestMaxFields` | `40` | Cap on (table, field) pairs exposed to one page's widget |
 | `$wgSaintapediaSuggestMaxValueLength` | `500` | Max characters for a suggested value and the stored snapshot |
+| `$wgSaintapediaSuggestMaxRowsPerTable` | `25` | Cap on rows of one Cargo table offered for a single page |
+| `$wgSaintapediaSuggestRowLabelField` | `[]` | Table => field naming each row in the picker |
 | `$wgSaintapediaSuggestRateLimit` | `5` | Submissions per IP per day (public mode) |
 | `$wgSaintapediaSuggestEnterpriseRateLimit` | `50` | Submissions per IP per day (enterprise mode) |
 | `$wgSaintapediaSuggestEnableEmail` | `false` | Show the optional contact email field (auto-on in enterprise) |
@@ -322,6 +356,7 @@ action=saintapediasuggest  (POST, csrf token required)
 | `pageid` | yes | Page whose Cargo row is being corrected |
 | `table` | yes | Cargo table — must be allow-listed |
 | `field` | yes | Cargo field — must be allow-listed and in the live schema |
+| `rowid` | when ambiguous | Cargo `_ID` of the row being corrected. Optional for a single-row table; an id that does not belong to this page and table is refused with `sps-norow` |
 | `suggestedvalue` | yes | Proposed value |
 | `comment` | no | Free-text explanation |
 | `email` | no | Contact email, stored only when the email field is enabled |
@@ -330,8 +365,9 @@ action=saintapediasuggest  (POST, csrf token required)
 Checks run in this order, cheapest first, so a malformed request never burns the
 reader's one-time hCaptcha token or an outbound `siteverify` round-trip:
 
-**block → title/namespace → allow-list → current value exists → value non-empty /
-not unchanged → captcha → per-IP rate limit → insert**
+**block → title/namespace → allow-list → row belongs to this page → current
+value exists → value non-empty / not unchanged → captcha → per-IP rate limit →
+insert**
 
 The response is `{ result, id }` and nothing else. **Contact emails are never
 exposed on the public API**, and the API never writes to Cargo.

@@ -41,6 +41,8 @@ class SuggestionStoreTest extends MediaWikiIntegrationTestCase {
 			'title'           => 'Test_Parish',
 			'cargoTable'      => 'Parishes',
 			'cargoField'      => 'Phone',
+			'cargoRowId'      => 1,
+			'cargoRowLabel'   => 'St. Fixture',
 			'currentValue'    => '555-0100',
 			'suggestedValue'  => '555-0199',
 			'comment'         => null,
@@ -168,6 +170,58 @@ class SuggestionStoreTest extends MediaWikiIntegrationTestCase {
 
 		$this->assertNull( $this->store->getById( $second )->sg_duplicate_of );
 		$this->assertSame( 0, (int)$this->store->getById( $first )->sg_duplicate_count );
+	}
+
+	/**
+	 * Two readers correcting DIFFERENT rows to the same value are not
+	 * reporting the same problem, so these must stay separate queue items.
+	 */
+	public function testSameValueOnDifferentRowsIsNotADuplicate(): void {
+		$first = $this->store->tryInsertUnderLimit( $this->row( [ 'cargoRowId' => 1 ] ), 50 );
+		$second = $this->store->tryInsertUnderLimit(
+			$this->row( [ 'cargoRowId' => 2, 'ipHash' => str_repeat( '7', 64 ) ] ),
+			50
+		);
+
+		$this->assertNull(
+			$this->store->getById( $second )->sg_duplicate_of,
+			'A correction to another row must not fold into the first'
+		);
+		$this->assertSame( 0, (int)$this->store->getById( $first )->sg_duplicate_count );
+		$this->assertSame( 2, $this->store->countDashboard( [ 'status' => 'all' ] ) );
+	}
+
+	public function testSameValueOnTheSameRowStillFolds(): void {
+		$first = $this->store->tryInsertUnderLimit( $this->row( [ 'cargoRowId' => 2 ] ), 50 );
+		$second = $this->store->tryInsertUnderLimit(
+			$this->row( [ 'cargoRowId' => 2, 'ipHash' => str_repeat( '8', 64 ) ] ),
+			50
+		);
+		$this->assertSame( $first, (int)$this->store->getById( $second )->sg_duplicate_of );
+		$this->assertSame( 1, (int)$this->store->getById( $first )->sg_duplicate_count );
+	}
+
+	public function testRowIdentityIsStoredAndReturned(): void {
+		$id = $this->store->insert( $this->row( [
+			'cargoRowId' => 3, 'cargoRowLabel' => 'Seton family home site' ] ) );
+		$row = $this->store->getById( $id );
+		$this->assertSame( 3, (int)$row->sg_cargo_row_id );
+		$this->assertSame( 'Seton family home site', (string)$row->sg_cargo_row_label );
+	}
+
+	/**
+	 * Rows written before row identity existed carry NULL, and must only ever
+	 * match other legacy rows — never a modern one that names a row.
+	 */
+	public function testLegacyRowsOnlyDeduplicateAgainstLegacyRows(): void {
+		$legacy = $this->store->tryInsertUnderLimit( $this->row( [ 'cargoRowId' => null ] ), 50 );
+		$modern = $this->store->tryInsertUnderLimit(
+			$this->row( [ 'cargoRowId' => 1, 'ipHash' => str_repeat( '9', 64 ) ] ), 50 );
+		$this->assertNull( $this->store->getById( $modern )->sg_duplicate_of );
+
+		$legacy2 = $this->store->tryInsertUnderLimit(
+			$this->row( [ 'cargoRowId' => null, 'ipHash' => str_repeat( '0', 64 ) ] ), 50 );
+		$this->assertSame( $legacy, (int)$this->store->getById( $legacy2 )->sg_duplicate_of );
 	}
 
 	public function testUpdateStatusWritesAnAuditEntry(): void {

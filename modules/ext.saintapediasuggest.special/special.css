@@ -412,3 +412,18 @@
 	color: #72777d;
 	font-style: italic;
 }
+
+/* Which row of a multi-row Cargo table a suggestion targets */
+
+.sps-row-label {
+	font-size: 0.8125rem;
+	padding: 0.1rem 0.45rem;
+	border-radius: 2px;
+	background: #eaf3ff;
+	border: 1px solid #cfe2ff;
+	color: #36c;
+	max-width: 22rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

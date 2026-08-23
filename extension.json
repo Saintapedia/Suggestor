@@ -1,6 +1,6 @@
 {
 	"name": "SaintapediaSuggest",
-	"version": "0.2.1",
+	"version": "0.3.0",
 	"author": [
 		"Saintapedia contributors"
 	],
@@ -121,7 +121,9 @@
 				"saintapediasuggest-error-novalue",
 				"saintapediasuggest-error-unchanged",
 				"saintapediasuggest-error-captcha",
-				"saintapediasuggest-error-captcha-unavailable"
+				"saintapediasuggest-error-captcha-unavailable",
+				"saintapediasuggest-row-ordinal",
+				"saintapediasuggest-error-norow"
 			],
 			"dependencies": [
 				"mediawiki.api",
@@ -266,6 +268,14 @@
 		"SaintapediaSuggestMergeDuplicates": {
 			"value": true,
 			"description": "Fold repeat reports of the same value for the same field into one queue item, counted on the canonical row. Set false to keep every submission as its own dashboard entry."
+		},
+		"SaintapediaSuggestRowLabelField": {
+			"value": {},
+			"description": "Map of Cargo table name => field whose value names each row in the picker, for tables where a page stores several rows. Unset tables fall back to the first allow-listed field that has a value, then to \"Row N\"."
+		},
+		"SaintapediaSuggestMaxRowsPerTable": {
+			"value": 25,
+			"description": "Cap on how many rows of one Cargo table are offered for a single page, so a page with hundreds of rows cannot inflate the widget."
 		}
 	},
 	"manifest_version": 2

@@ -140,6 +140,78 @@ class CargoFieldRegistryTest extends TestCase {
 		);
 	}
 
+	/* ------------------------------------------------------ row labelling */
+
+	/**
+	 * A page can store several rows in one Cargo table, and "Row 2" tells a
+	 * reader nothing about which sighting or Mass time they are correcting.
+	 */
+	public function testRowLabelPrefersTheAdminsNominatedField(): void {
+		$values = [ 'Name' => 'St. Fixture', 'LocationTitle' => 'National Shrine' ];
+		$this->assertSame(
+			'National Shrine',
+			CargoFieldRegistry::rowLabel( $values, [ 'Name', 'LocationTitle' ], 'LocationTitle', 1 )
+		);
+	}
+
+	public function testRowLabelFallsBackToFirstNonEmptyAllowListedField(): void {
+		$values = [ 'Name' => '', 'LocationTitle' => 'Seton family home' ];
+		$this->assertSame(
+			'Seton family home',
+			CargoFieldRegistry::rowLabel( $values, [ 'Name', 'LocationTitle' ], null, 2 )
+		);
+	}
+
+	public function testRowLabelSkipsAnEmptyNominatedField(): void {
+		$values = [ 'Name' => 'St. Fixture', 'LocationTitle' => '   ' ];
+		$this->assertSame(
+			'St. Fixture',
+			CargoFieldRegistry::rowLabel( $values, [ 'Name', 'LocationTitle' ], 'LocationTitle', 1 )
+		);
+	}
+
+	public function testRowLabelFallsBackToTheOrdinal(): void {
+		$this->assertSame(
+			'Row 3',
+			CargoFieldRegistry::rowLabel( [ 'Name' => '', 'City' => '' ], [ 'Name', 'City' ], null, 3 )
+		);
+	}
+
+	/**
+	 * The ordinal fallback is localised by the caller, because this class is
+	 * deliberately free of MediaWiki's message system.
+	 */
+	public function testRowLabelUsesTheInjectedOrdinalFormatter(): void {
+		$this->assertSame(
+			'Ligne 2',
+			CargoFieldRegistry::rowLabel( [], [ 'Name' ], null, 2, static function ( $n ) {
+				return 'Ligne ' . $n;
+			} )
+		);
+	}
+
+	public function testRowLabelIsTruncated(): void {
+		$long = str_repeat( 'a', CargoFieldRegistry::MAX_ROW_LABEL_LENGTH + 40 );
+		$label = CargoFieldRegistry::rowLabel( [ 'Name' => $long ], [ 'Name' ], null, 1 );
+		$this->assertSame( CargoFieldRegistry::MAX_ROW_LABEL_LENGTH, mb_strlen( $label ) );
+	}
+
+	public function testRowLabelTrimsWhitespace(): void {
+		$this->assertSame(
+			'St. Fixture',
+			CargoFieldRegistry::rowLabel( [ 'Name' => "  St. Fixture\n" ], [ 'Name' ], null, 1 )
+		);
+	}
+
+	public function testRowLabelIgnoresFieldsOutsideTheAllowList(): void {
+		// A value the reader was never offered must not become the row's name.
+		$values = [ 'Secret' => 'internal note', 'Name' => '' ];
+		$this->assertSame(
+			'Row 1',
+			CargoFieldRegistry::rowLabel( $values, [ 'Name' ], null, 1 )
+		);
+	}
+
 	public function testIsReservedField(): void {
 		$this->assertTrue( CargoFieldRegistry::isReservedField( '_pageID' ) );
 		$this->assertTrue( CargoFieldRegistry::isReservedField( '_pageName' ) );

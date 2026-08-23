@@ -70,7 +70,16 @@ class Hooks {
 			return;
 		}
 
-		$fields = $this->registry->getSuggestableFields( $title->getArticleID() );
+		// The registry is deliberately free of MediaWiki's message system, so
+		// the localised "Row N" fallback is injected from here.
+		$context = $out->getContext();
+		$fields = $this->registry->getSuggestableFields(
+			$title->getArticleID(),
+			static function ( $ordinal ) use ( $context ) {
+				return $context->msg( 'saintapediasuggest-row-ordinal' )
+					->numParams( $ordinal )->text();
+			}
+		);
 		if ( !$fields ) {
 			// No Cargo row, or nothing allow-listed for this page: render no
 			// widget at all rather than an empty picker.

@@ -85,18 +85,39 @@ class ApiSaintapediaSuggestSubmit extends ApiBase {
 			$this->dieWithError( 'saintapediasuggest-error-nofield', 'sps-nofield' );
 		}
 
+		// Which row of that table. A page can hold several rows in one Cargo
+		// table, so a suggestion without a row is ambiguous; an id that does
+		// not belong to this page and table is refused rather than quietly
+		// resolved to whichever row the database returns first.
+		$pageId = $title->getArticleID();
+		$rowId = $params['rowid'] !== null ? (int)$params['rowid'] : null;
+		if ( $rowId !== null && !$this->registry->isValidRow( $pageId, $cargoTable, $rowId ) ) {
+			$this->dieWithError( 'saintapediasuggest-error-norow', 'sps-norow' );
+		}
+
 		// The current value is snapshotted server-side. A client-supplied
 		// "current value" would let a submitter fabricate the before-state
 		// a reviewer sees.
 		$currentValue = $this->registry->getCurrentValue(
-			$title->getArticleID(),
+			$pageId,
 			$cargoTable,
-			$cargoField
+			$cargoField,
+			$rowId
 		);
 		if ( $currentValue === null ) {
 			// Allow-listed, but this page has no row in that table.
 			$this->dieWithError( 'saintapediasuggest-error-nofield', 'sps-nofield' );
 		}
+
+		$rowLabel = $this->registry->getRowLabel(
+			$pageId,
+			$cargoTable,
+			$cargoField,
+			$rowId,
+			function ( $ordinal ) {
+				return $this->msg( 'saintapediasuggest-row-ordinal' )->numParams( $ordinal )->text();
+			}
+		);
 
 		$maxLen = (int)$config->get( 'SaintapediaSuggestMaxValueLength' );
 		$suggested = trim( (string)$params['suggestedvalue'] );
@@ -161,11 +182,13 @@ class ApiSaintapediaSuggestSubmit extends ApiBase {
 		}
 
 		$id = $this->store->tryInsertUnderLimit( [
-			'pageId'         => $title->getArticleID(),
+			'pageId'         => $pageId,
 			'namespace'      => $title->getNamespace(),
 			'title'          => $title->getDBkey(),
 			'cargoTable'     => $cargoTable,
 			'cargoField'     => $cargoField,
+			'cargoRowId'     => $rowId,
+			'cargoRowLabel'  => $rowLabel,
 			'currentValue'   => $currentValue,
 			'suggestedValue' => $suggested,
 			'comment'        => $comment,
@@ -211,6 +234,11 @@ class ApiSaintapediaSuggestSubmit extends ApiBase {
 			'field' => [
 				ParamValidator::PARAM_TYPE     => 'string',
 				ParamValidator::PARAM_REQUIRED => true,
+			],
+			// Optional so a single-row table needs no row id, and so clients
+			// written against 0.2.x keep working.
+			'rowid' => [
+				ParamValidator::PARAM_TYPE => 'integer',
 			],
 			'suggestedvalue' => [
 				ParamValidator::PARAM_TYPE     => 'string',

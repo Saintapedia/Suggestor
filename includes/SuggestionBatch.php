@@ -37,6 +37,13 @@ class SuggestionBatch {
 				'namespace'      => (int)$row->sg_page_namespace,
 				'cargoTable'     => (string)$row->sg_cargo_table,
 				'cargoField'     => (string)$row->sg_cargo_field,
+				'cargoRowId'     => isset( $row->sg_cargo_row_id )
+					? (int)$row->sg_cargo_row_id
+					: null,
+				'cargoRowLabel'  => isset( $row->sg_cargo_row_label )
+					&& (string)$row->sg_cargo_row_label !== ''
+					? (string)$row->sg_cargo_row_label
+					: null,
 				'currentValue'   => isset( $row->sg_current_value )
 					? (string)$row->sg_current_value
 					: null,

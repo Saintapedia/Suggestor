@@ -33,6 +33,12 @@ class CargoFieldRegistry {
 	/** Cargo's own bookkeeping columns, never offered to readers. */
 	public const RESERVED_PREFIX = '_';
 
+	/** Row labels are shown in a dropdown; long ones are truncated. */
+	public const MAX_ROW_LABEL_LENGTH = 60;
+
+	/** Fallback when $wgSaintapediaSuggestMaxRowsPerTable is unset/invalid. */
+	private const DEFAULT_MAX_ROWS = 25;
+
 	private Config $config;
 	private ILoadBalancer $loadBalancer;
 
@@ -45,6 +51,27 @@ class CargoFieldRegistry {
 	public function __construct( Config $config, ILoadBalancer $loadBalancer ) {
 		$this->config = $config;
 		$this->loadBalancer = $loadBalancer;
+	}
+
+	/**
+	 * Read a config value, tolerating one that the injected Config does not
+	 * define.
+	 *
+	 * In a normal install every key has a default from extension.json, but
+	 * this class takes an injected Config, and a caller supplying a partial
+	 * one (a test, or an embedder) would otherwise get a hard
+	 * ConfigException out of what is only an optional knob.
+	 *
+	 * @param mixed $default
+	 * @return mixed
+	 */
+	private function configValue( string $key, $default ) {
+		try {
+			$value = $this->config->get( $key );
+		} catch ( \Throwable $e ) {
+			return $default;
+		}
+		return $value ?? $default;
 	}
 
 	/**
@@ -338,9 +365,17 @@ class CargoFieldRegistry {
 	 * Capped at $wgSaintapediaSuggestMaxFields so a wide allow-list cannot
 	 * inflate every article's HTML.
 	 *
-	 * @return list<array{table:string,field:string,value:string,type:string,isList:bool}>
+	 * One entry per (table, row, field): a page may hold several rows in one
+	 * Cargo table, and collapsing them would make every suggestion ambiguous
+	 * about which row it refers to.
+	 *
+	 * @param callable(int):string|null $rowFallbackLabel Formats "Row N" for
+	 *   rows whose every candidate label field is empty. Injected so this
+	 *   class stays free of MediaWiki's message system.
+	 * @return list<array{table:string,field:string,value:string,type:string,
+	 *   isList:bool,rowId:int,rowLabel:string,rowOrdinal:int,rowCount:int}>
 	 */
-	public function getSuggestableFields( int $pageId ): array {
+	public function getSuggestableFields( int $pageId, ?callable $rowFallbackLabel = null ): array {
 		$max = (int)$this->config->get( 'SaintapediaSuggestMaxFields' );
 		if ( $max < 1 ) {
 			return [];
@@ -352,23 +387,37 @@ class CargoFieldRegistry {
 			if ( !$fields ) {
 				continue;
 			}
-			$values = $this->readRow( $table, $fields, $pageId );
-			if ( $values === null ) {
+			$rows = $this->readRows( $table, $fields, $pageId );
+			if ( !$rows ) {
 				continue;
 			}
+
 			$descriptions = $this->getSchemas()[$table]->mFieldDescriptions ?? [];
-			foreach ( $fields as $field ) {
-				if ( count( $out ) >= $max ) {
-					return $out;
+			$labelField = $this->labelFieldFor( $table );
+			$rowCount = count( $rows );
+
+			foreach ( $rows as $ordinal => $row ) {
+				$label = self::rowLabel(
+					$row['values'], $fields, $labelField, $ordinal + 1, $rowFallbackLabel
+				);
+
+				foreach ( $fields as $field ) {
+					if ( count( $out ) >= $max ) {
+						return $out;
+					}
+					$desc = $descriptions[$field] ?? null;
+					$out[] = [
+						'table'      => $table,
+						'field'      => $field,
+						'value'      => $this->clampValue( (string)( $row['values'][$field] ?? '' ) ),
+						'type'       => $desc && isset( $desc->mType ) ? (string)$desc->mType : '',
+						'isList'     => (bool)( $desc->mIsList ?? false ),
+						'rowId'      => $row['_ID'],
+						'rowLabel'   => $label,
+						'rowOrdinal' => $ordinal + 1,
+						'rowCount'   => $rowCount,
+					];
 				}
-				$desc = $descriptions[$field] ?? null;
-				$out[] = [
-					'table' => $table,
-					'field' => $field,
-					'value' => $this->clampValue( (string)( $values[$field] ?? '' ) ),
-					'type' => $desc && isset( $desc->mType ) ? (string)$desc->mType : '',
-					'isList' => (bool)( $desc->mIsList ?? false ),
-				];
 			}
 		}
 		return $out;
@@ -376,63 +425,201 @@ class CargoFieldRegistry {
 
 	/**
 	 * Currently stored value for one field, or null when the pair is not
-	 * allow-listed or the page has no row in that table.
+	 * allow-listed or the page has no matching row in that table.
 	 *
 	 * The API uses this to snapshot sg_current_value server-side.
+	 *
+	 * $rowId names which of the page's rows to read. Passing null reads the
+	 * first row, which is correct only for single-row tables — the API always
+	 * passes an explicit id, so an ambiguous target is refused rather than
+	 * silently resolved to whichever row the database happened to return.
 	 */
-	public function getCurrentValue( int $pageId, string $table, string $field ): ?string {
-		if ( !$this->isAllowed( $table, $field ) ) {
-			return null;
-		}
-		$values = $this->readRow( $table, [ $field ], $pageId );
-		if ( $values === null || !array_key_exists( $field, $values ) ) {
-			return null;
-		}
-		return $this->clampValue( (string)$values[$field] );
+	public function getCurrentValue(
+		int $pageId,
+		string $table,
+		string $field,
+		?int $rowId = null
+	): ?string {
+		$row = $this->findRow( $pageId, $table, $field, $rowId );
+		return $row === null ? null : $this->clampValue( (string)( $row['values'][$field] ?? '' ) );
 	}
 
 	/**
-	 * Read the given fields of this page's row in a Cargo table.
+	 * Label recorded alongside a suggestion, so the dashboard can name the row
+	 * even after the underlying data changes.
+	 */
+	public function getRowLabel(
+		int $pageId,
+		string $table,
+		string $field,
+		?int $rowId,
+		?callable $rowFallbackLabel = null
+	): ?string {
+		$row = $this->findRow( $pageId, $table, $field, $rowId );
+		if ( $row === null ) {
+			return null;
+		}
+		return self::rowLabel(
+			$row['values'],
+			$this->getAllowedFields( $table ),
+			$this->labelFieldFor( $table ),
+			$row['ordinal'],
+			$rowFallbackLabel
+		);
+	}
+
+	/**
+	 * Whether this page really has that row in that table. The API checks it
+	 * before trusting a row id from the request.
+	 */
+	public function isValidRow( int $pageId, string $table, int $rowId ): bool {
+		$fields = $this->getAllowedFields( $table );
+		if ( !$fields ) {
+			return false;
+		}
+		foreach ( $this->readRows( $table, $fields, $pageId ) as $row ) {
+			if ( $row['_ID'] === $rowId ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Locate one row, reading every allow-listed field so a label can be
+	 * derived from it.
+	 *
+	 * @return array{_ID:int,values:array<string,mixed>,ordinal:int}|null
+	 */
+	private function findRow( int $pageId, string $table, string $field, ?int $rowId ): ?array {
+		if ( !$this->isAllowed( $table, $field ) ) {
+			return null;
+		}
+		$rows = $this->readRows( $table, $this->getAllowedFields( $table ), $pageId );
+		if ( !$rows ) {
+			return null;
+		}
+		foreach ( $rows as $ordinal => $row ) {
+			if ( $rowId === null || $row['_ID'] === $rowId ) {
+				$row['ordinal'] = $ordinal + 1;
+				return $row;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Human label for one row of a multi-row table.
+	 *
+	 * A page can store several rows in one Cargo table — three sightings, a
+	 * list of Mass times — and "Row 2" tells a reader nothing about which one
+	 * they are correcting. Prefer the admin's nominated field, else the first
+	 * allow-listed field that actually has a value, else a bare ordinal.
+	 *
+	 * Pure; unit-testable.
+	 *
+	 * @param array<string,mixed> $values Logical field name => value
+	 * @param string[] $orderedFields Allow-listed fields, in schema order
+	 * @param string|null $preferredField Admin override for this table
+	 * @param int $ordinal 1-based position, used only for the fallback
+	 * @param callable(int):string|null $fallback Formats the ordinal label
+	 */
+	public static function rowLabel(
+		array $values,
+		array $orderedFields,
+		?string $preferredField,
+		int $ordinal,
+		?callable $fallback = null
+	): string {
+		$candidates = [];
+		if ( $preferredField !== null && $preferredField !== '' ) {
+			$candidates[] = $preferredField;
+		}
+		foreach ( $orderedFields as $field ) {
+			$candidates[] = $field;
+		}
+
+		foreach ( $candidates as $field ) {
+			$value = trim( (string)( $values[$field] ?? '' ) );
+			if ( $value !== '' ) {
+				return mb_strlen( $value ) > self::MAX_ROW_LABEL_LENGTH
+					? mb_substr( $value, 0, self::MAX_ROW_LABEL_LENGTH )
+					: $value;
+			}
+		}
+
+		return $fallback ? $fallback( $ordinal ) : 'Row ' . $ordinal;
+	}
+
+	/** The admin's nominated label field for a table, if any. */
+	private function labelFieldFor( string $table ): ?string {
+		$map = $this->configValue( 'SaintapediaSuggestRowLabelField', [] );
+		if ( !is_array( $map ) || !isset( $map[$table] ) ) {
+			return null;
+		}
+		$field = trim( (string)$map[$table] );
+		return $field !== '' ? $field : null;
+	}
+
+	/**
+	 * Read every row this page has in a Cargo table.
 	 *
 	 * $table and $fields have already been validated against the live Cargo
 	 * schema by the caller, so they are safe to use as identifiers here.
 	 * Cargo data may live in a separate database ($wgCargoDBname), so this
 	 * goes through CargoUtils::getDB() rather than the wiki's load balancer.
 	 *
-	 * Fields are selected as `physicalColumn AS logicalField`, so the
-	 * returned array is always keyed by the logical Cargo field name even
-	 * when the value lives in a `__full` column.
+	 * Fields are selected as `physicalColumn AS logicalField`, so each row is
+	 * keyed by the logical Cargo field name even when the value lives in a
+	 * `__full` column.
 	 *
 	 * @param string[] $fields Logical Cargo field names
-	 * @return array<string,mixed>|null Null when there is no row / on error
+	 * @return list<array{_ID:int,values:array<string,mixed>}> Empty on error
 	 */
-	private function readRow( string $table, array $fields, int $pageId ): ?array {
+	private function readRows( string $table, array $fields, int $pageId ): array {
 		if ( !$fields || $pageId <= 0 || !$this->isCargoAvailable() ) {
-			return null;
+			return [];
 		}
 		// [ logicalName => physicalColumn ] becomes "physicalColumn AS logicalName".
 		$select = $this->columnMap( $table, $fields );
 		if ( !$select ) {
-			return null;
+			return [];
 		}
+		// Cargo's own row id, so a suggestion can name the row it targets.
+		$select['_ID'] = '_ID';
+
+		$maxRows = (int)$this->configValue(
+			'SaintapediaSuggestMaxRowsPerTable', self::DEFAULT_MAX_ROWS
+		);
+		if ( $maxRows < 1 ) {
+			$maxRows = self::DEFAULT_MAX_ROWS;
+		}
+
 		try {
 			$cdb = CargoUtils::getDB();
-			$row = $cdb->selectRow(
+			$res = $cdb->select(
 				$table,
 				$select,
 				[ '_pageID' => $pageId ],
-				__METHOD__
+				__METHOD__,
+				// Stable order so the picker does not reshuffle between views.
+				[ 'ORDER BY' => '_ID', 'LIMIT' => $maxRows ]
 			);
 		} catch ( \Throwable $e ) {
 			// A table can vanish between the schema read and this query
 			// during a Cargo rebuild; treat it as "no data" for this page.
-			$this->logSoftFailure( 'readRow:' . $table, $e );
-			return null;
+			$this->logSoftFailure( 'readRows:' . $table, $e );
+			return [];
 		}
-		if ( !$row ) {
-			return null;
+
+		$out = [];
+		foreach ( $res as $row ) {
+			$values = (array)$row;
+			$id = (int)( $values['_ID'] ?? 0 );
+			unset( $values['_ID'] );
+			$out[] = [ '_ID' => $id, 'values' => $values ];
 		}
-		return (array)$row;
+		return $out;
 	}
 
 	/**

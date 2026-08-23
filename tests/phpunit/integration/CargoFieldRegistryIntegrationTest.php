@@ -67,10 +67,14 @@ class CargoFieldRegistryIntegrationTest extends MediaWikiIntegrationTestCase {
 	 */
 	private function registry( array $tables, array $extra = [] ): CargoFieldRegistry {
 		return new CargoFieldRegistry(
+			// Mirrors the full set of defaults extension.json supplies, so a
+			// missing key here cannot be mistaken for a code failure.
 			new HashConfig( $extra + [
-				'SaintapediaSuggestTables'         => $tables,
-				'SaintapediaSuggestMaxFields'      => 40,
-				'SaintapediaSuggestMaxValueLength' => 500,
+				'SaintapediaSuggestTables'          => $tables,
+				'SaintapediaSuggestMaxFields'       => 40,
+				'SaintapediaSuggestMaxValueLength'  => 500,
+				'SaintapediaSuggestMaxRowsPerTable' => 25,
+				'SaintapediaSuggestRowLabelField'   => [],
 			] ),
 			MediaWikiServices::getInstance()->getDBLoadBalancer()
 		);
@@ -88,6 +92,26 @@ class CargoFieldRegistryIntegrationTest extends MediaWikiIntegrationTestCase {
 			[ 'Name', 'City', 'Founded', 'Aliases', 'Location' ],
 			array_keys( $schemas[self::TABLE]->mFieldDescriptions )
 		);
+	}
+
+	/**
+	 * HashConfig::get() throws on an undefined option. Optional knobs must
+	 * fall back to their defaults rather than taking the whole widget down on
+	 * a Config that does not define them.
+	 */
+	public function testOptionalConfigMayBeAbsent(): void {
+		$registry = new CargoFieldRegistry(
+			new HashConfig( [
+				'SaintapediaSuggestTables'         => [ self::TABLE => '*' ],
+				'SaintapediaSuggestMaxFields'      => 40,
+				'SaintapediaSuggestMaxValueLength' => 500,
+				// MaxRowsPerTable and RowLabelField deliberately omitted.
+			] ),
+			MediaWikiServices::getInstance()->getDBLoadBalancer()
+		);
+		$fields = $registry->getSuggestableFields( self::PAGE_ID );
+		$this->assertCount( 5, $fields );
+		$this->assertSame( 'St. Fixture', $fields[0]['rowLabel'] );
 	}
 
 	public function testCargoIsDetected(): void {
@@ -219,6 +243,144 @@ class CargoFieldRegistryIntegrationTest extends MediaWikiIntegrationTestCase {
 				)
 			);
 		}
+	}
+
+	/* ------------------------------------------------- multi-row behaviour */
+
+	private function multiRegistry(): CargoFieldRegistry {
+		$this->createMultiRowCargoFixture();
+		return $this->registry( [ self::FIXTURE_MULTI_TABLE => '*' ] );
+	}
+
+	/**
+	 * The bug this exists to prevent: three rows collapsing into one set of
+	 * values, so a reader correcting the third sighting was silently offered
+	 * — and attributed to — the first.
+	 */
+	public function testEveryRowIsOfferedSeparately(): void {
+		$fields = $this->multiRegistry()->getSuggestableFields( self::FIXTURE_PAGE_ID );
+
+		// 3 rows x 3 fields
+		$this->assertCount( 9, $fields );
+		$this->assertSame( [ 1, 2, 3 ], array_values( array_unique(
+			array_column( $fields, 'rowId' )
+		) ) );
+
+		$years = [];
+		foreach ( $fields as $f ) {
+			if ( $f['field'] === 'EventYear' ) {
+				$years[ $f['rowId'] ] = $f['value'];
+			}
+		}
+		$this->assertSame( [ 1 => '1809', 2 => '1805', 3 => '1794' ], $years );
+	}
+
+	public function testRowsAreLabelledByTheirFirstAllowListedValue(): void {
+		$byRow = [];
+		foreach ( $this->multiRegistry()->getSuggestableFields( self::FIXTURE_PAGE_ID ) as $f ) {
+			$byRow[ $f['rowId'] ] = $f['rowLabel'];
+		}
+		$this->assertSame( 'National Shrine of Saint Elizabeth Ann Seton', $byRow[1] );
+		$this->assertSame( 'Seton family home site (State Street area)', $byRow[3] );
+	}
+
+	public function testRowLabelFieldOverrideIsHonoured(): void {
+		$this->createMultiRowCargoFixture();
+		$registry = $this->registry(
+			[ self::FIXTURE_MULTI_TABLE => '*' ],
+			[ 'SaintapediaSuggestRowLabelField' => [ self::FIXTURE_MULTI_TABLE => 'SiteType' ] ]
+		);
+		$byRow = [];
+		foreach ( $registry->getSuggestableFields( self::FIXTURE_PAGE_ID ) as $f ) {
+			$byRow[ $f['rowId'] ] = $f['rowLabel'];
+		}
+		$this->assertSame( [ 1 => 'Shrine', 2 => 'Church', 3 => 'Home' ], $byRow );
+	}
+
+	public function testRowCountIsReportedOnEveryEntry(): void {
+		foreach ( $this->multiRegistry()->getSuggestableFields( self::FIXTURE_PAGE_ID ) as $f ) {
+			$this->assertSame( 3, $f['rowCount'] );
+		}
+	}
+
+	public function testSingleRowTableStillReportsOneRow(): void {
+		foreach ( $this->allowAll()->getSuggestableFields( self::PAGE_ID ) as $f ) {
+			$this->assertSame( 1, $f['rowCount'] );
+			$this->assertSame( 1, $f['rowId'] );
+		}
+	}
+
+	public function testCurrentValueIsReadFromTheNamedRow(): void {
+		$registry = $this->multiRegistry();
+		$t = self::FIXTURE_MULTI_TABLE;
+
+		$this->assertSame( '1809', $registry->getCurrentValue( self::FIXTURE_PAGE_ID, $t, 'EventYear', 1 ) );
+		$this->assertSame( '1805', $registry->getCurrentValue( self::FIXTURE_PAGE_ID, $t, 'EventYear', 2 ) );
+		$this->assertSame( '1794', $registry->getCurrentValue( self::FIXTURE_PAGE_ID, $t, 'EventYear', 3 ) );
+	}
+
+	public function testUnknownRowIdIsRefused(): void {
+		$registry = $this->multiRegistry();
+		$t = self::FIXTURE_MULTI_TABLE;
+
+		$this->assertFalse( $registry->isValidRow( self::FIXTURE_PAGE_ID, $t, 99 ) );
+		$this->assertNull( $registry->getCurrentValue( self::FIXTURE_PAGE_ID, $t, 'EventYear', 99 ) );
+		foreach ( [ 1, 2, 3 ] as $id ) {
+			$this->assertTrue( $registry->isValidRow( self::FIXTURE_PAGE_ID, $t, $id ) );
+		}
+	}
+
+	public function testRowsFromAnotherPageAreNotValid(): void {
+		$registry = $this->multiRegistry();
+		$this->assertFalse(
+			$registry->isValidRow( self::FIXTURE_PAGE_ID + 1, self::FIXTURE_MULTI_TABLE, 1 )
+		);
+	}
+
+	public function testGetRowLabelNamesTheRowThatWasRead(): void {
+		$registry = $this->multiRegistry();
+		$this->assertSame(
+			'Seton family home site (State Street area)',
+			$registry->getRowLabel( self::FIXTURE_PAGE_ID, self::FIXTURE_MULTI_TABLE, 'EventYear', 3 )
+		);
+	}
+
+	public function testMaxRowsPerTableCapsTheOffer(): void {
+		$this->createMultiRowCargoFixture();
+		$registry = $this->registry(
+			[ self::FIXTURE_MULTI_TABLE => '*' ],
+			[ 'SaintapediaSuggestMaxRowsPerTable' => 2 ]
+		);
+		$rowIds = array_unique( array_column(
+			$registry->getSuggestableFields( self::FIXTURE_PAGE_ID ), 'rowId'
+		) );
+		$this->assertCount( 2, $rowIds );
+	}
+
+	/**
+	 * A page in two Cargo tables must offer both, which is what lets the
+	 * picker group by table.
+	 */
+	public function testFieldsFromSeveralTablesAreOfferedTogether(): void {
+		$this->createMultiRowCargoFixture();
+		$registry = $this->registry( [
+			self::FIXTURE_TABLE       => '*',
+			self::FIXTURE_MULTI_TABLE => '*',
+		] );
+
+		// Sorted so the assertion does not depend on cargo_pages row order.
+		$expected = [ self::FIXTURE_TABLE, self::FIXTURE_MULTI_TABLE ];
+		sort( $expected );
+
+		$tables = array_values( array_unique( array_column(
+			$registry->getSuggestableFields( self::FIXTURE_PAGE_ID ), 'table'
+		) ) );
+		sort( $tables );
+		$this->assertSame( $expected, $tables );
+
+		$fromPage = $registry->getTablesForPage( self::FIXTURE_PAGE_ID );
+		sort( $fromPage );
+		$this->assertSame( $expected, $fromPage );
 	}
 
 	public function testPageWithoutACargoRowYieldsNothing(): void {
