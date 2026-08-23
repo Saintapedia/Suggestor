@@ -3,6 +3,7 @@
 namespace MediaWiki\Extension\SaintapediaSuggest;
 
 use Config;
+use ExtensionRegistry;
 use MediaWiki\Extension\SaintapediaSuggest\Cargo\CargoFieldRegistry;
 use MediaWiki\Title\Title;
 use OutputPage;
@@ -81,6 +82,12 @@ class Hooks {
 		$captcha = CaptchaGate::prepareOutput( $out, $this->config );
 
 		$out->addJsConfigVars( [
+			// SaintapediaFeedback puts its own floating button in the
+			// bottom-right corner of the same articles. When both are
+			// installed, ours stacks above it instead of landing underneath
+			// it — its z-index is higher, so an overlap hides ours entirely.
+			'spsStacked'              => ExtensionRegistry::getInstance()
+				->isLoaded( 'SaintapediaFeedback' ),
 			'spsMode'                 => $mode,
 			'spsPageId'               => $title->getArticleID(),
 			'spsPageTitle'            => $title->getPrefixedText(),

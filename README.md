@@ -468,6 +468,36 @@ Behaviour worth knowing before you point it at anything:
 
 ---
 
+## Running alongside SaintapediaFeedback
+
+The two are designed to coexist and share no namespace: separate database
+tables, config variables, rights, special pages, API modules, ResourceLoader
+modules, i18n keys and `MediaWiki:` config pages. They register some of the same
+hooks, which MediaWiki supports — each gets its own handler.
+
+The one place they genuinely compete is the bottom-right corner of an article.
+SaintapediaFeedback puts its button there (and, when public counts are on, a
+chip above it) at `z-index: 1001`. When both extensions are installed, this one
+detects that and stacks above, measured on a live page as:
+
+| Control | Occupies (px from bottom) |
+|---------|---------------------------|
+| SaintapediaFeedback button | 24 – 66 |
+| SaintapediaFeedback counts chip (if enabled) | 80 – 108 |
+| **SaintapediaSuggest button** | **120 – 158** |
+
+A reader on such a wiki sees two buttons: *Improve this article* for
+page-level feedback, *Suggest a correction* for a specific Cargo field. Each can
+be dismissed independently for the tab.
+
+> **Known limitation.** Both widgets load hCaptcha from the same URL. This one
+> reuses a script tag another extension already injected, but SaintapediaFeedback
+> injects unconditionally, so opening *its* panel second still adds a second tag.
+> Observed effect is benign — hCaptcha initialises and both captchas render — but
+> the clean fix is the same guard in SaintapediaFeedback's `loadHCaptchaScript()`.
+
+---
+
 ## Translations
 
 `en` is the source. `es`, `fr`, `it` and `pt` cover the reader widget and the

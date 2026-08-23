@@ -15,6 +15,27 @@
 	display: none;
 }
 
+/*
+ * SaintapediaFeedback owns the bottom-right corner of the same articles and
+ * can put two things there: its button (bottom 24px, ~46px tall) and, when
+ * $wgSaintapediaFeedbackShowPublicCounts is on, a counts chip at bottom 80px.
+ * Both sit at z-index 1001, so anything lower simply disappears behind them.
+ *
+ * 7.5rem (120px) clears the chip's top edge (~108px) with room to spare. It is
+ * deliberately a fixed offset rather than one derived from Feedback's runtime
+ * config: that setting has an on-wiki override, so a value read at render time
+ * could be stale by the time the reader sees the page. A small gap when the
+ * chip is off is a much better failure than an overlap when it is on.
+ *
+ * The flag comes from mw.config, so the offset does not depend on which
+ * widget happens to finish rendering first.
+ */
+.sps-root--stacked {
+	right: 1.5rem;
+	bottom: 7.5rem;
+	z-index: 1001;
+}
+
 .sps-fab {
 	background: #36c;
 	color: #fff;
