@@ -3,13 +3,13 @@
 namespace MediaWiki\Extension\SaintapediaSuggest;
 
 use Config;
-use MediaWiki\Extension\ConfirmEdit\Hooks as ConfirmEditHooks;
+use ExtensionRegistry;
 use MediaWiki\Extension\ConfirmEdit\hCaptcha\HCaptcha;
+use MediaWiki\Extension\ConfirmEdit\Hooks as ConfirmEditHooks;
 use MediaWiki\MediaWikiServices;
 use OutputPage;
-use ExtensionRegistry;
-use WebRequest;
 use User;
+use WebRequest;
 
 /**
  * Captcha policy for open (mostly anonymous) suggestion submit.

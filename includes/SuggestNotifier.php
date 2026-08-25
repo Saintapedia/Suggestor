@@ -3,11 +3,11 @@
 namespace MediaWiki\Extension\SaintapediaSuggest;
 
 use Config;
-use MediaWiki\MediaWikiServices;
 use ExtensionRegistry;
-use MediaWiki\Title\Title;
-use User;
+use MediaWiki\MediaWikiServices;
 use SpecialPage;
+use Title;
+use User;
 use Wikimedia\Rdbms\ILoadBalancer;
 
 /**

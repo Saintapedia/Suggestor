@@ -3,9 +3,9 @@
 namespace MediaWiki\Extension\SaintapediaSuggest;
 
 use MediaWiki\MediaWikiServices;
-use MediaWiki\Title\Title;
-use User;
 use MediaWiki\User\UserIdentity;
+use Title;
+use User;
 
 /**
  * Who may view/triage the suggestion dashboard.

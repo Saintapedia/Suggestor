@@ -43,11 +43,14 @@ configuring one teaches you the other.
 | [ConfirmEdit](https://www.mediawiki.org/wiki/Extension:ConfirmEdit) + hCaptcha | — | only for public/anonymous mode |
 | [Echo](https://www.mediawiki.org/wiki/Extension:Echo) | — | optional, for notifications |
 
-Class imports are deliberately kept to the un-namespaced core names
-(`Config`, `User`, `OutputPage`, `WebRequest`, `ExtensionRegistry`) rather than the
-`MediaWiki\…` namespaces those classes moved into after 1.39. Core keeps
-`class_alias` shims for all of them, so one codebase runs unmodified on 1.39
-through 1.43. For the same reason the hook handler classes do not `implements`
+Class imports are deliberately kept to the un-namespaced core names — `Config`,
+`User`, `OutputPage`, `WebRequest`, `ExtensionRegistry`, `Title`, `TitleFactory`
+— rather than the `MediaWiki\…` namespaces those classes moved into after 1.39
+(`Title` and `TitleFactory` as late as 1.41, per core's own `HISTORY`). Core
+keeps `class_alias` shims for all of them, so one codebase runs unmodified on
+1.39 through 1.43. Only classes that predate 1.39 are imported under their
+namespace: `MediaWikiServices` (1.28), `UserIdentity` (1.35) and
+`LoadExtensionSchemaUpdatesHook` (1.35). For the same reason the hook handler classes do not `implements`
 the core hook interfaces — `BeforePageDisplayHook` changed namespace between
 those releases, and `HookContainer` dispatches on method name anyway.
 

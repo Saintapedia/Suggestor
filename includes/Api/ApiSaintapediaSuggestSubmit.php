@@ -3,14 +3,14 @@
 namespace MediaWiki\Extension\SaintapediaSuggest\Api;
 
 use ApiBase;
-use MediaWiki\Extension\SaintapediaSuggest\Cargo\CargoFieldRegistry;
 use MediaWiki\Extension\SaintapediaSuggest\CaptchaGate;
+use MediaWiki\Extension\SaintapediaSuggest\Cargo\CargoFieldRegistry;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestAccess;
-use MediaWiki\Extension\SaintapediaSuggest\SuggestNotifier;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestionStore;
+use MediaWiki\Extension\SaintapediaSuggest\SuggestNotifier;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestWikiConfig;
 use MediaWiki\MediaWikiServices;
-use MediaWiki\Title\TitleFactory;
+use TitleFactory;
 use Wikimedia\ParamValidator\ParamValidator;
 
 /**

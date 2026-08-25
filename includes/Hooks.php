@@ -5,10 +5,10 @@ namespace MediaWiki\Extension\SaintapediaSuggest;
 use Config;
 use ExtensionRegistry;
 use MediaWiki\Extension\SaintapediaSuggest\Cargo\CargoFieldRegistry;
-use MediaWiki\Title\Title;
 use OutputPage;
 use Skin;
 use SpecialPage;
+use Title;
 
 /**
  * Request-time hook handlers.

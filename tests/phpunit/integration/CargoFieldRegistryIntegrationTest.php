@@ -3,10 +3,10 @@
 namespace MediaWiki\Extension\SaintapediaSuggest\Tests\Integration;
 
 use CargoUtils;
+use ExtensionRegistry;
 use HashConfig;
 use MediaWiki\Extension\SaintapediaSuggest\Cargo\CargoFieldRegistry;
 use MediaWiki\MediaWikiServices;
-use MediaWiki\Registration\ExtensionRegistry;
 use MediaWikiIntegrationTestCase;
 
 /**

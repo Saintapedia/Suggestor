@@ -7,10 +7,10 @@ use MediaWiki\Extension\SaintapediaSuggest\SuggestAccess;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestFilters;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestionStore;
 use MediaWiki\MediaWikiServices;
-use MediaWiki\Title\Title;
-use MediaWiki\Title\TitleFactory;
 use PermissionsError;
 use SpecialPage;
+use Title;
+use TitleFactory;
 
 /**
  * Reviewer dashboard for Cargo field suggestions.
