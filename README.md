@@ -325,6 +325,7 @@ that belongs under code review.
 | `$wgSaintapediaSuggestTables` | `[]` | Allow-list of Cargo tables/fields. Empty = nothing suggestable |
 | `$wgSaintapediaSuggestMode` | `'public'` | `public` (captcha on, short form) or `enterprise` (captcha off, long form, email on) |
 | `$wgSaintapediaSuggestEnabled` | `true` | Master switch for the reader widget; dashboard stays reachable |
+| `$wgSaintapediaSuggestEntryPoint` | `'button'` | `'button'` for our own floating button, `'none'` to let another extension open the panel via `mw.hook` |
 | `$wgSaintapediaSuggestNamespaces` | `[ 0 ]` | Where the widget shows and the API accepts submissions |
 | `$wgSaintapediaSuggestMaxFields` | `40` | Cap on (table, field) pairs exposed to one page's widget |
 | `$wgSaintapediaSuggestMaxValueLength` | `500` | Max characters for a suggested value and the stored snapshot |
@@ -534,6 +535,44 @@ be dismissed independently for the tab.
 > injects unconditionally, so opening *its* panel second still adds a second tag.
 > Observed effect is benign — hCaptcha initialises and both captchas render — but
 > the clean fix is the same guard in SaintapediaFeedback's `loadHCaptchaScript()`.
+
+---
+
+## One entry point instead of two
+
+On a wiki also running
+[SaintapediaFeedback](https://github.com/Saintapedia/SaintapediaFeedback), two
+floating buttons compete for the same corner. This extension stacks above it by
+default (see above), but the tidier arrangement is for one of them to own the
+entry point:
+
+```php
+// Render the panel, but no button of our own.
+$wgSaintapediaSuggestEntryPoint = 'none';
+```
+
+Then anything on the page can open it:
+
+```javascript
+mw.hook( 'saintapediasuggest.open' ).fire();
+// …or land the reader on a particular field:
+mw.hook( 'saintapediasuggest.open' ).fire( { table: 'Parishes', field: 'Phone' } );
+```
+
+To know whether the option is worth offering at all, listen for readiness — it
+fires only on pages that actually have suggestable Cargo fields:
+
+```javascript
+mw.hook( 'saintapediasuggest.ready' ).add( function ( info ) {
+	// info = { pageId, fieldCount, tables: [...], ownButton: false }
+} );
+```
+
+A hook rather than a global is deliberate: firing into a hook nobody listens on
+is a no-op, so a wiki without this extension installed degrades to nothing
+rather than a `TypeError`. `'button'` (the default) is unchanged, and an
+unrecognised value falls back to `'button'` rather than to no entry point at
+all — a typo should not silently make the feature unreachable.
 
 ---
 

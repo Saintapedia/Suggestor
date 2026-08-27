@@ -23,7 +23,8 @@
 		requireCaptcha: mw.config.get( 'spsRequireCaptcha' ) || false,
 		captchaMisconfigured: mw.config.get( 'spsCaptchaMisconfigured' ) || false,
 		hCaptchaSiteKey: mw.config.get( 'spsHCaptchaSiteKey' ) || '',
-		stacked: mw.config.get( 'spsStacked' ) || false
+		stacked: mw.config.get( 'spsStacked' ) || false,
+		entryPoint: mw.config.get( 'spsEntryPoint' ) || 'button'
 	};
 
 	if ( !config.pageId || !config.fields.length ) {
@@ -346,7 +347,17 @@
 			form
 		] );
 
-		var root = el( 'div', { class: 'sps-root' }, [ panel, fab, hideBtn ] );
+		// In 'none' mode the panel still exists and still works — only this
+		// extension's own button is withheld, because something else (a
+		// sibling extension, a gadget) opens it through the hook below. That
+		// is what lets a wiki running two feedback tools show one entry point
+		// instead of two competing floating buttons.
+		var ownButton = config.entryPoint !== 'none';
+		var root = el(
+			'div',
+			{ class: 'sps-root' + ( ownButton ? '' : ' sps-root--no-button' ) },
+			ownButton ? [ panel, fab, hideBtn ] : [ panel ]
+		);
 
 		/* ------------------------------------------------------- behaviour */
 
@@ -526,6 +537,37 @@
 			} );
 		} );
 
+		/*
+		 * Public API for other extensions and gadgets.
+		 *
+		 *   mw.hook( 'saintapediasuggest.open' ).fire();
+		 *   mw.hook( 'saintapediasuggest.open' ).fire( { field: 'Phone' } );
+		 *
+		 * Deliberately a hook rather than a global: the caller does not need
+		 * this module loaded, or even installed — firing into a hook nobody
+		 * listens on is a no-op, so the integration degrades to nothing
+		 * instead of a TypeError.
+		 */
+		mw.hook( 'saintapediasuggest.open' ).add( function ( options ) {
+			setFabHidden( false );
+			root.classList.remove( 'sps-hidden' );
+
+			// Preselect a field when the caller named one, so a deep link can
+			// land the reader on the right row of the picker.
+			if ( options && options.field ) {
+				for ( var i = 0; i < config.fields.length; i++ ) {
+					var f = config.fields[ i ];
+					if ( f.field === options.field &&
+						( !options.table || f.table === options.table ) ) {
+						fieldSelect.value = String( i );
+						fieldSelect.dispatchEvent( new Event( 'change' ) );
+						break;
+					}
+				}
+			}
+			openPanel();
+		} );
+
 		if ( config.stacked ) {
 			root.classList.add( 'sps-root--stacked' );
 		}
@@ -536,6 +578,23 @@
 
 		document.body.appendChild( root );
 		restoreFromHash();
+
+		/*
+		 * Tell anyone who cares that this page has suggestable fields, so a
+		 * sibling extension can offer the option only when it would lead
+		 * somewhere. Fired after the widget is in the DOM, so a handler may
+		 * open it immediately.
+		 */
+		mw.hook( 'saintapediasuggest.ready' ).fire( {
+			pageId: config.pageId,
+			fieldCount: config.fields.length,
+			tables: config.fields.map( function ( f ) {
+				return f.table;
+			} ).filter( function ( t, i, all ) {
+				return all.indexOf( t ) === i;
+			} ),
+			ownButton: ownButton
+		} );
 	}
 
 	if ( document.readyState === 'loading' ) {

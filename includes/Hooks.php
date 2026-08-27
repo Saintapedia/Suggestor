@@ -97,6 +97,7 @@ class Hooks {
 			// it — its z-index is higher, so an overlap hides ours entirely.
 			'spsStacked'              => ExtensionRegistry::getInstance()
 				->isLoaded( 'SaintapediaFeedback' ),
+			'spsEntryPoint'           => $this->entryPoint(),
 			'spsMode'                 => $mode,
 			'spsPageId'               => $title->getArticleID(),
 			'spsPageTitle'            => $title->getPrefixedText(),
@@ -170,6 +171,18 @@ class Hooks {
 			)->getLocalURL(),
 			'text' => $text,
 		];
+	}
+
+	/**
+	 * How readers reach the panel: this extension's own button, or nothing
+	 * visible because something else opens it through the JS hook.
+	 *
+	 * An unrecognised value falls back to the button rather than to nothing —
+	 * a typo should not silently make the feature unreachable.
+	 */
+	private function entryPoint(): string {
+		$value = $this->config->get( 'SaintapediaSuggestEntryPoint' );
+		return $value === 'none' ? 'none' : 'button';
 	}
 
 	/** Master on/off for the reader widget (PHP config + on-wiki override). */

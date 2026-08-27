@@ -219,3 +219,17 @@
 		width: calc( 100vw - 2rem );
 	}
 }
+
+/*
+ * $wgSaintapediaSuggestEntryPoint = 'none': the panel exists and works, but
+ * this extension contributes no floating button — something else opens it via
+ * mw.hook( 'saintapediasuggest.open' ). The root must not reserve a hit area
+ * in the corner, or it would sit invisibly over the page and swallow clicks.
+ */
+.sps-root--no-button {
+	pointer-events: none;
+}
+
+.sps-root--no-button .sps-panel {
+	pointer-events: auto;
+}

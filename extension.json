@@ -1,6 +1,6 @@
 {
 	"name": "SaintapediaSuggest",
-	"version": "0.3.1",
+	"version": "0.4.0",
 	"author": [
 		"Saintapedia contributors"
 	],
@@ -276,6 +276,10 @@
 		"SaintapediaSuggestMaxRowsPerTable": {
 			"value": 25,
 			"description": "Cap on how many rows of one Cargo table are offered for a single page, so a page with hundreds of rows cannot inflate the widget."
+		},
+		"SaintapediaSuggestEntryPoint": {
+			"value": "button",
+			"description": "How readers open the suggestion panel. 'button' shows this extension's own floating button. 'none' renders the panel but no button, for wikis where another extension opens it via the mw.hook('saintapediasuggest.open') API — so readers get one entry point instead of two competing buttons."
 		}
 	},
 	"manifest_version": 2
