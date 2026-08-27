@@ -427,3 +427,32 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+
+/* Freshness: how the suggestion compares with what Cargo holds now */
+
+.sps-freshness {
+	font-size: 0.75rem;
+	padding: 0.1rem 0.45rem;
+	border-radius: 10px;
+	white-space: nowrap;
+}
+
+.sps-freshness-applied {
+	background: #d5fdf4;
+	border: 1px solid #14866d;
+	color: #096450;
+}
+
+.sps-freshness-changed {
+	background: #fef6e7;
+	border: 1px solid #fc3;
+	color: #71570d;
+}
+
+/* The one a reviewer most needs to notice: marked done, data never moved. */
+.sps-freshness-unapplied {
+	background: #fee7e6;
+	border: 1px solid #d73333;
+	color: #b32424;
+	font-weight: bold;
+}

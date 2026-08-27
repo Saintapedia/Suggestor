@@ -5,6 +5,8 @@ namespace MediaWiki\Extension\SaintapediaSuggest\Special;
 use Html;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestAccess;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestFilters;
+use MediaWiki\Extension\SaintapediaSuggest\Cargo\CargoFieldRegistry;
+use MediaWiki\Extension\SaintapediaSuggest\SuggestionFreshness;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestionStore;
 use MediaWiki\MediaWikiServices;
 use PermissionsError;
@@ -31,14 +33,23 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 
 	private SuggestionStore $store;
 	private TitleFactory $titleFactory;
+	private CargoFieldRegistry $registry;
 
-	public function __construct( SuggestionStore $store, TitleFactory $titleFactory ) {
+	/** rowKey => freshness state, built once per screen. @var array<string,string> */
+	private array $freshness = [];
+
+	public function __construct(
+		SuggestionStore $store,
+		TitleFactory $titleFactory,
+		CargoFieldRegistry $registry
+	) {
 		// The restriction is declared for Special:ListGroupRights and
 		// LocalSettings; actual access is SuggestAccess (wiki page + defaults
 		// + the explicit right), checked in checkPermissions().
 		parent::__construct( 'SaintapediaSuggest', 'saintapediasuggest-view' );
 		$this->store = $store;
 		$this->titleFactory = $titleFactory;
+		$this->registry = $registry;
 	}
 
 	/**
@@ -184,6 +195,7 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 		$out->addHTML( Html::hidden( 'wpEditToken', $this->getUser()->getEditToken() ) );
 		$out->addHTML( $this->renderBulkToolbar() );
 
+		$this->buildFreshness( $rows );
 		$out->addHTML( Html::openElement( 'ul', [ 'class' => 'sps-list' ] ) );
 		foreach ( $rows as $row ) {
 			$out->addHTML( $this->renderRow( $row, true ) );
@@ -249,6 +261,7 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 		$out->addHTML( Html::hidden( 'sps_pageid', (string)$pageId ) );
 		$out->addHTML( $this->renderBulkToolbar() );
 
+		$this->buildFreshness( $rows );
 		$out->addHTML( Html::openElement( 'ul', [ 'class' => 'sps-list' ] ) );
 		foreach ( $rows as $row ) {
 			$out->addHTML( $this->renderRow( $row, false ) );
@@ -312,6 +325,7 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 		$out->addHTML( Html::hidden( 'wpEditToken', $this->getUser()->getEditToken() ) );
 		// Return here after the mutation instead of dropping back to the list.
 		$out->addHTML( Html::hidden( 'sps_detail', (string)$id ) );
+		$this->buildFreshness( [ $row ] );
 		$out->addHTML( Html::openElement( 'ul', [ 'class' => 'sps-list' ] ) );
 		$out->addHTML( $this->renderRow( $row, true, false ) );
 		$out->addHTML( Html::closeElement( 'ul' ) );
@@ -584,6 +598,109 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 	}
 
 	/* ------------------------------------------------------------ rendering */
+
+	/**
+	 * Compare a screenful of suggestions against what Cargo holds now.
+	 *
+	 * Grouped by (page, table) so this costs one Cargo query per group rather
+	 * than one per suggestion, and capped so a dashboard spanning hundreds of
+	 * pages does not issue an unbounded number of them — above the cap the
+	 * check is skipped and no badges appear, which is a missing hint rather
+	 * than a wrong one.
+	 *
+	 * @param object[] $rows
+	 */
+	private function buildFreshness( array $rows ): void {
+		$this->freshness = [];
+
+		if ( !$rows || !$this->getConfig()->get( 'SaintapediaSuggestFreshnessCheck' ) ) {
+			return;
+		}
+
+		$groups = [];
+		foreach ( $rows as $row ) {
+			$groups[(int)$row->sg_page_id . "\0" . (string)$row->sg_cargo_table] = [
+				(int)$row->sg_page_id,
+				(string)$row->sg_cargo_table,
+			];
+		}
+
+		$max = (int)$this->getConfig()->get( 'SaintapediaSuggestMaxFreshnessLookups' );
+		if ( $max > 0 && count( $groups ) > $max ) {
+			return;
+		}
+
+		$live = [];
+		foreach ( $groups as $key => [ $pageId, $table ] ) {
+			try {
+				$live[$key] = $this->registry->getValuesForPageTable( $pageId, $table );
+			} catch ( \Throwable $e ) {
+				// Cargo mid-rebuild, table dropped: no badge for this group.
+				$live[$key] = [];
+			}
+		}
+
+		foreach ( $rows as $row ) {
+			$key = (int)$row->sg_page_id . "\0" . (string)$row->sg_cargo_table;
+			$rowId = $row->sg_cargo_row_id !== null ? (int)$row->sg_cargo_row_id : null;
+			$field = (string)$row->sg_cargo_field;
+
+			$values = $live[$key] ?? [];
+			if ( $rowId === null ) {
+				// Pre-0.3.0 rows named no Cargo row. They were all captured
+				// against the first one, but saying so now would invent
+				// precision that was never recorded — so only compare when
+				// the table holds exactly one row and there is no ambiguity.
+				$current = count( $values ) === 1 ? reset( $values ) : null;
+			} else {
+				$current = $values[$rowId] ?? null;
+			}
+
+			$liveValue = is_array( $current ) && array_key_exists( $field, $current )
+				? (string)$current[$field]
+				: null;
+
+			$this->freshness[(string)$row->sg_id] = SuggestionFreshness::classify(
+				$row->sg_current_value !== null ? (string)$row->sg_current_value : null,
+				$liveValue,
+				(string)$row->sg_suggested_value
+			);
+		}
+	}
+
+	/**
+	 * Badge for one suggestion, or '' when there is nothing worth saying.
+	 */
+	private function renderFreshnessBadge( object $row ): string {
+		$state = $this->freshness[(string)$row->sg_id] ?? SuggestionFreshness::UNKNOWN;
+		$status = (string)$row->sg_status;
+
+		// The one that matters most: someone marked it done and the data
+		// never moved.
+		if ( SuggestionFreshness::isActionedButUnchanged( $status, $state ) ) {
+			return Html::element(
+				'span',
+				[
+					'class' => 'sps-freshness sps-freshness-unapplied',
+					'title' => $this->msg( 'saintapediasuggest-freshness-unapplied-tip' )->text(),
+				],
+				$this->msg( 'saintapediasuggest-freshness-unapplied' )->text()
+			);
+		}
+
+		if ( !SuggestionFreshness::isNoteworthy( $state ) ) {
+			return '';
+		}
+
+		return Html::element(
+			'span',
+			[
+				'class' => 'sps-freshness sps-freshness-' . $state,
+				'title' => $this->msg( 'saintapediasuggest-freshness-' . $state . '-tip' )->text(),
+			],
+			$this->msg( 'saintapediasuggest-freshness-' . $state )->text()
+		);
+	}
 
 	/**
 	 * @return array<string,mixed>
@@ -867,6 +984,8 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 
 		$header .= Html::element( 'span', [ 'class' => 'sps-status sps-status-' . (string)$row->sg_status ],
 			$this->msg( 'saintapediasuggest-status-' . (string)$row->sg_status )->text() );
+
+		$header .= $this->renderFreshnessBadge( $row );
 
 		if ( $showPage ) {
 			$title = $this->titleFactory->newFromID( (int)$row->sg_page_id );

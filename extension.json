@@ -1,6 +1,6 @@
 {
 	"name": "SaintapediaSuggest",
-	"version": "0.4.0",
+	"version": "0.5.0",
 	"author": [
 		"Saintapedia contributors"
 	],
@@ -43,7 +43,8 @@
 			"class": "MediaWiki\\Extension\\SaintapediaSuggest\\Special\\SpecialSaintapediaSuggest",
 			"services": [
 				"SaintapediaSuggest.SuggestionStore",
-				"TitleFactory"
+				"TitleFactory",
+				"SaintapediaSuggest.CargoFieldRegistry"
 			]
 		}
 	},
@@ -280,6 +281,14 @@
 		"SaintapediaSuggestEntryPoint": {
 			"value": "button",
 			"description": "How readers open the suggestion panel. 'button' shows this extension's own floating button. 'none' renders the panel but no button, for wikis where another extension opens it via the mw.hook('saintapediasuggest.open') API — so readers get one entry point instead of two competing buttons."
+		},
+		"SaintapediaSuggestFreshnessCheck": {
+			"value": true,
+			"description": "On the dashboard, compare each suggestion against the value Cargo holds now and flag ones already applied, changed since reported, or marked actioned without the data actually changing. Read-only; set false to skip the extra Cargo lookups entirely."
+		},
+		"SaintapediaSuggestMaxFreshnessLookups": {
+			"value": 50,
+			"description": "Cap on distinct (page, Cargo table) pairs looked up for the freshness check on one dashboard screen. Above this the check is skipped for that screen rather than issuing an unbounded number of Cargo queries."
 		}
 	},
 	"manifest_version": 2

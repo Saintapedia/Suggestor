@@ -383,6 +383,42 @@ class CargoFieldRegistryIntegrationTest extends MediaWikiIntegrationTestCase {
 		$this->assertSame( $expected, $fromPage );
 	}
 
+	/* ------------------------------------------ batch lookup for freshness */
+
+	public function testGetValuesForPageTableReturnsEveryRowKeyedById(): void {
+		$this->createMultiRowCargoFixture();
+		$registry = $this->registry( [ self::FIXTURE_MULTI_TABLE => '*' ] );
+
+		$values = $registry->getValuesForPageTable( self::FIXTURE_PAGE_ID, self::FIXTURE_MULTI_TABLE );
+		$this->assertSame( [ 1, 2, 3 ], array_keys( $values ) );
+		$this->assertSame( '1794', $values[3]['EventYear'] );
+		$this->assertSame( 'Church', $values[2]['SiteType'] );
+	}
+
+	/**
+	 * The batch reader must agree with the single-value reader, including for
+	 * fields stored in a `__full` column.
+	 */
+	public function testBatchLookupAgreesWithGetCurrentValue(): void {
+		$registry = $this->allowAll();
+		$values = $registry->getValuesForPageTable( self::PAGE_ID, self::TABLE );
+		$this->assertCount( 1, $values );
+
+		foreach ( reset( $values ) as $field => $value ) {
+			$this->assertSame(
+				$registry->getCurrentValue( self::PAGE_ID, self::TABLE, $field ),
+				$value,
+				$field
+			);
+		}
+	}
+
+	public function testGetValuesForPageTableIsEmptyForUnknownTargets(): void {
+		$registry = $this->allowAll();
+		$this->assertSame( [], $registry->getValuesForPageTable( self::PAGE_ID, 'NoSuchTable' ) );
+		$this->assertSame( [], $registry->getValuesForPageTable( 999999999, self::TABLE ) );
+	}
+
 	public function testPageWithoutACargoRowYieldsNothing(): void {
 		$registry = $this->allowAll();
 		$absent = self::PAGE_ID + 1;

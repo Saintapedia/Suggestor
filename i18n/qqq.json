@@ -119,5 +119,11 @@
 	"notification-header-saintapediasuggest-new": "Echo notification header. Parameters:\n* $1 - prefixed title of the page",
 	"notification-body-saintapediasuggest-new": "Echo notification body. Parameters:\n* $1 - Cargo target as Table.Field\n* $2 - the suggested value, truncated to 200 characters",
 	"notification-body-saintapediasuggest-new-field": "Echo notification body when no suggested value is available. Parameters:\n* $1 - Cargo target as Table.Field",
-	"notification-link-saintapediasuggest-new": "Label of the Echo notification link to the dashboard."
+	"notification-link-saintapediasuggest-new": "Label of the Echo notification link to the dashboard.",
+	"saintapediasuggest-freshness-applied": "Badge on a suggestion whose proposed value is what Cargo now holds — the change appears to have been made already.",
+	"saintapediasuggest-freshness-applied-tip": "Tooltip for the 'Already applied' badge.",
+	"saintapediasuggest-freshness-changed": "Badge on a suggestion whose field has since changed to something that is neither what the reader saw nor what they proposed.",
+	"saintapediasuggest-freshness-changed-tip": "Tooltip for the 'Data changed' badge.",
+	"saintapediasuggest-freshness-unapplied": "Badge on a suggestion marked actioned whose field still holds the value the reader originally reported — the edit may never have been made.",
+	"saintapediasuggest-freshness-unapplied-tip": "Tooltip for the 'Actioned, but unchanged' badge."
 }

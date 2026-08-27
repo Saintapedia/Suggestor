@@ -119,5 +119,11 @@
 	"notification-header-saintapediasuggest-new": "A reader suggested a correction on <strong>$1</strong>.",
 	"notification-body-saintapediasuggest-new": "$1 → $2",
 	"notification-body-saintapediasuggest-new-field": "Field: $1",
-	"notification-link-saintapediasuggest-new": "Review suggestion"
+	"notification-link-saintapediasuggest-new": "Review suggestion",
+	"saintapediasuggest-freshness-applied": "Already applied",
+	"saintapediasuggest-freshness-applied-tip": "The stored value already matches this suggestion.",
+	"saintapediasuggest-freshness-changed": "Data changed",
+	"saintapediasuggest-freshness-changed-tip": "This field has changed since the suggestion was made, so the value shown as \"currently\" is out of date.",
+	"saintapediasuggest-freshness-unapplied": "Actioned, but unchanged",
+	"saintapediasuggest-freshness-unapplied-tip": "This was marked actioned, but the stored value is still the one the reader reported. The change may not have been made."
 }

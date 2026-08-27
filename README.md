@@ -330,6 +330,8 @@ that belongs under code review.
 | `$wgSaintapediaSuggestMaxFields` | `40` | Cap on (table, field) pairs exposed to one page's widget |
 | `$wgSaintapediaSuggestMaxValueLength` | `500` | Max characters for a suggested value and the stored snapshot |
 | `$wgSaintapediaSuggestMaxRowsPerTable` | `25` | Cap on rows of one Cargo table offered for a single page |
+| `$wgSaintapediaSuggestFreshnessCheck` | `true` | Compare each suggestion against the live Cargo value and badge the notable cases |
+| `$wgSaintapediaSuggestMaxFreshnessLookups` | `50` | Cap on distinct (page, table) pairs checked per dashboard screen |
 | `$wgSaintapediaSuggestRowLabelField` | `[]` | Table => field naming each row in the picker |
 | `$wgSaintapediaSuggestRateLimit` | `5` | Submissions per IP per day (public mode) |
 | `$wgSaintapediaSuggestEnterpriseRateLimit` | `50` | Submissions per IP per day (enterprise mode) |
@@ -535,6 +537,38 @@ be dismissed independently for the tab.
 > injects unconditionally, so opening *its* panel second still adds a second tag.
 > Observed effect is benign — hCaptcha initialises and both captchas render — but
 > the clean fix is the same guard in SaintapediaFeedback's `loadHCaptchaScript()`.
+
+---
+
+## Is the suggestion still relevant?
+
+This extension never writes to Cargo, so a queue item can sit while the data
+moves on beneath it. The dashboard compares each suggestion against what Cargo
+holds **now** and badges the cases worth a reviewer's attention:
+
+| Badge | Meaning |
+|-------|---------|
+| **Already applied** | The stored value already equals what the reader proposed — somebody made the change. The item is busywork |
+| **Data changed** | The field is now neither what the reader saw nor what they proposed, so the "Currently:" snapshot is stale |
+| **Actioned, but unchanged** | Marked actioned, yet the stored value is still the one the reader reported. **The edit probably never happened** |
+
+The last is the point of the whole thing: marking something actioned asserts the
+change was made elsewhere, and nothing else in this extension checks that claim.
+
+Comparison reuses the duplicate-matching normalization, so case, whitespace and
+curly punctuation do not flip a badge on their own. Nothing is written — the
+check is read-only.
+
+```php
+$wgSaintapediaSuggestFreshnessCheck = true;      // default
+$wgSaintapediaSuggestMaxFreshnessLookups = 50;   // distinct (page, table) pairs per screen
+```
+
+Lookups are grouped by (page, table), so a screenful costs one Cargo query per
+group rather than one per suggestion. Above the cap the check is skipped for that
+screen — a missing hint rather than a wrong one, and never an unbounded number of
+queries. Pre-0.3.0 rows that name no Cargo row are only compared when the table
+holds exactly one row, since otherwise there is no way to know which they meant.
 
 ---
 

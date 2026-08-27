@@ -562,6 +562,32 @@ class CargoFieldRegistry {
 	}
 
 	/**
+	 * Every allow-listed value this page holds in one Cargo table, keyed by
+	 * row id.
+	 *
+	 * Batching entry point for the dashboard's freshness check: comparing N
+	 * suggestions against live data is one query per (page, table) rather
+	 * than one per suggestion.
+	 *
+	 * @return array<int,array<string,string>> rowId => [ field => value ]
+	 */
+	public function getValuesForPageTable( int $pageId, string $table ): array {
+		$fields = $this->getAllowedFields( $table );
+		if ( !$fields ) {
+			return [];
+		}
+		$out = [];
+		foreach ( $this->readRows( $table, $fields, $pageId ) as $row ) {
+			$values = [];
+			foreach ( $fields as $field ) {
+				$values[$field] = $this->clampValue( (string)( $row['values'][$field] ?? '' ) );
+			}
+			$out[$row['_ID']] = $values;
+		}
+		return $out;
+	}
+
+	/**
 	 * Read every row this page has in a Cargo table.
 	 *
 	 * $table and $fields have already been validated against the live Cargo
