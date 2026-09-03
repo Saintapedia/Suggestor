@@ -56,6 +56,10 @@ those releases, and `HookContainer` dispatches on method name anyway.
 
 ---
 
+> **Deploying to a real wiki?** See [DEPLOY.md](./DEPLOY.md) for the pinned-tag
+> install, the smoke checklist, rollback, and the known gaps.
+> [CHANGELOG.md](./CHANGELOG.md) records what each release changed.
+
 ## Install (each wiki)
 
 ```bash
