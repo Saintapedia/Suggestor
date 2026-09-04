@@ -433,9 +433,8 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 	/** @return bool True when the request was handled and a redirect issued. */
 	private function handleStatusUpdate(): bool {
 		$request = $this->getRequest();
-		$id = (int)$request->getInt( 'sps_id' );
-		$status = (string)$request->getVal( 'sps_status', '' );
-		if ( !$id || $status === '' ) {
+		$parsed = SuggestFilters::parseRowAction( $request->getVal( 'sps_status' ) );
+		if ( !$parsed ) {
 			return false;
 		}
 
@@ -443,10 +442,9 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 			$this->redirectAfterMutation( [ 'sps_flash' => 'token' ] );
 			return true;
 		}
-		if ( !in_array( $status, SuggestFilters::processActions(), true ) ) {
-			$this->redirectAfterMutation( [ 'sps_flash' => 'badstatus' ] );
-			return true;
-		}
+
+		$id = $parsed['id'];
+		$status = $parsed['status'];
 
 		$pageId = (int)$request->getInt( 'sps_pageid' );
 		$ok = $this->store->updateStatus(
@@ -454,7 +452,7 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 			$status,
 			$pageId > 0 ? $pageId : null,
 			$this->getUser()->getId(),
-			SuggestFilters::statusUpdateOpts( $request->getVal( 'sps_worknote' ) )
+			SuggestFilters::statusUpdateOpts( self::workNoteForRow( $request, $id ) )
 		);
 
 		$this->redirectAfterMutation( [ 'sps_flash' => $ok ? 'updated' : 'notfound' ] );
@@ -955,6 +953,7 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 		$lang = $this->getLanguage();
 		$user = $this->getUser();
 		$duplicateCount = (int)( $row->sg_duplicate_count ?? 0 );
+		$title = $this->titleFactory->newFromID( (int)$row->sg_page_id );
 
 		$header = Html::element( 'input', [
 			'type'  => 'checkbox',
@@ -988,7 +987,6 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 		$header .= $this->renderFreshnessBadge( $row );
 
 		if ( $showPage ) {
-			$title = $this->titleFactory->newFromID( (int)$row->sg_page_id );
 			if ( $title ) {
 				$header .= ' ' . $this->getLinkRenderer()->makeLink( $title, $title->getPrefixedText() );
 			} else {
@@ -1019,15 +1017,34 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 			);
 		}
 
+		$suggestedActions = Html::element( 'button', [
+			'type'  => 'button',
+			'class' => 'sps-copy',
+			'title' => $this->msg( 'saintapediasuggest-copy-tip' )->text(),
+		], $this->msg( 'saintapediasuggest-copy' )->text() );
+		if ( $title && $title->exists() ) {
+			$suggestedActions .= Html::element( 'a', [
+				'href'   => $title->getLocalURL( [ 'action' => 'edit' ] ),
+				'class'  => 'sps-edit',
+				'target' => '_blank',
+				'rel'    => 'noopener noreferrer',
+			], $this->msg( 'saintapediasuggest-edit-article' )->text() );
+		}
+
 		$body = Html::rawElement( 'div', [ 'class' => 'sps-values' ],
 			Html::element( 'div', [ 'class' => 'sps-value sps-value-current' ],
 				$this->msg( 'saintapediasuggest-current-label' )->text() . ' '
 				. ( (string)( $row->sg_current_value ?? '' ) !== ''
 					? (string)$row->sg_current_value
 					: $this->msg( 'saintapediasuggest-current-empty' )->text() ) )
-			. Html::element( 'div', [ 'class' => 'sps-value sps-value-suggested' ],
-				$this->msg( 'saintapediasuggest-suggested-label' )->text() . ' '
-				. (string)$row->sg_suggested_value )
+			. Html::rawElement( 'div', [ 'class' => 'sps-value sps-value-suggested' ],
+				Html::element( 'span', [ 'class' => 'sps-value-label' ],
+					$this->msg( 'saintapediasuggest-suggested-label' )->text() )
+				. ' '
+				. Html::element( 'span', [ 'class' => 'sps-copy-value' ],
+					(string)$row->sg_suggested_value )
+				. $suggestedActions
+			)
 		);
 
 		if ( (string)( $row->sg_comment ?? '' ) !== '' ) {
@@ -1049,7 +1066,7 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 
 		$actions = Html::element( 'input', [
 			'type'        => 'text',
-			'name'        => 'sps_worknote',
+			'name'        => 'sps_worknote[' . $id . ']',
 			'class'       => 'sps-row-note',
 			'maxlength'   => 2000,
 			'placeholder' => $this->msg( 'saintapediasuggest-worknote-placeholder' )->text(),
@@ -1060,13 +1077,12 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 				[
 					'type'  => 'submit',
 					'name'  => 'sps_status',
-					'value' => $action,
+					'value' => $id . ':' . $action,
 					'class' => 'sps-action sps-action-' . $action,
 				],
 				$this->msg( 'saintapediasuggest-action-' . $action )->text()
 			);
 		}
-		$actions = Html::hidden( 'sps_id', (string)$id ) . $actions;
 
 		return Html::rawElement( 'li', [ 'class' => 'sps-item', 'data-sps-id' => (string)$id ],
 			Html::rawElement( 'div', [ 'class' => 'sps-item-header' ], $header )
@@ -1133,6 +1149,27 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 				$this->msg( 'saintapediasuggest-export' )->text()
 			)
 		);
+	}
+
+	/**
+	 * Per-row note from a form that lists many suggestions. Each input is
+	 * named sps_worknote[{id}] so PHP does not keep the last row's value.
+	 *
+	 * @param \WebRequest $request
+	 */
+	private static function workNoteForRow( $request, int $id ): ?string {
+		$notes = $request->getArray( 'sps_worknote' );
+		if ( !is_array( $notes ) ) {
+			return null;
+		}
+		if ( array_key_exists( $id, $notes ) ) {
+			return is_string( $notes[$id] ) ? $notes[$id] : null;
+		}
+		if ( array_key_exists( (string)$id, $notes ) ) {
+			$note = $notes[(string)$id];
+			return is_string( $note ) ? $note : null;
+		}
+		return null;
 	}
 
 	protected function getGroupName(): string {

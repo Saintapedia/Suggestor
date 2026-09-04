@@ -90,4 +90,36 @@ class SuggestFiltersTest extends TestCase {
 		$this->assertSame( 100, SuggestFilters::clampOffset( 500, 120, 50 ) );
 		$this->assertSame( 0, SuggestFilters::clampOffset( -10, 120, 50 ) );
 	}
+
+	/**
+	 * Per-row dashboard buttons encode the id in the submit value so a single
+	 * form wrapping every row cannot apply the last hidden sps_id instead of
+	 * the row that was clicked.
+	 */
+	public function testParseRowActionReadsIdAndStatus(): void {
+		$this->assertSame(
+			[ 'id' => 42, 'status' => 'actioned' ],
+			SuggestFilters::parseRowAction( '42:actioned' )
+		);
+		$this->assertSame(
+			[ 'id' => 7, 'status' => 'reviewed' ],
+			SuggestFilters::parseRowAction( '7:reviewed' )
+		);
+		$this->assertSame(
+			[ 'id' => 1, 'status' => 'dismissed' ],
+			SuggestFilters::parseRowAction( '1:dismissed' )
+		);
+	}
+
+	public function testParseRowActionRejectsGarbage(): void {
+		$this->assertNull( SuggestFilters::parseRowAction( null ) );
+		$this->assertNull( SuggestFilters::parseRowAction( '' ) );
+		$this->assertNull( SuggestFilters::parseRowAction( 'actioned' ) );
+		$this->assertNull( SuggestFilters::parseRowAction( '42' ) );
+		$this->assertNull( SuggestFilters::parseRowAction( '42:new' ), 'cannot move back to new' );
+		$this->assertNull( SuggestFilters::parseRowAction( '0:actioned' ) );
+		$this->assertNull( SuggestFilters::parseRowAction( '-3:actioned' ) );
+		$this->assertNull( SuggestFilters::parseRowAction( '42:actioned:extra' ) );
+		$this->assertNull( SuggestFilters::parseRowAction( 'abc:actioned' ) );
+	}
 }

@@ -328,6 +328,7 @@ class CargoFieldRegistryIntegrationTest extends MediaWikiIntegrationTestCase {
 		foreach ( [ 1, 2, 3 ] as $id ) {
 			$this->assertTrue( $registry->isValidRow( self::FIXTURE_PAGE_ID, $t, $id ) );
 		}
+		$this->assertSame( [ 1, 2, 3 ], $registry->getRowIds( self::FIXTURE_PAGE_ID, $t ) );
 	}
 
 	public function testRowsFromAnotherPageAreNotValid(): void {

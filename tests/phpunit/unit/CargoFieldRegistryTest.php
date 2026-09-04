@@ -219,4 +219,58 @@ class CargoFieldRegistryTest extends TestCase {
 		$this->assertFalse( CargoFieldRegistry::isReservedField( 'Phone' ) );
 		$this->assertFalse( CargoFieldRegistry::isReservedField( 'Address_2' ) );
 	}
+
+	/**
+	 * A request that names a row must hit one this page actually has.
+	 */
+	public function testResolveRequestedRowRejectsAnUnknownId(): void {
+		$this->assertSame(
+			[ 'ok' => false ],
+			CargoFieldRegistry::resolveRequestedRow( 99, [ 1, 2, 3 ] )
+		);
+		$this->assertSame(
+			[ 'ok' => false ],
+			CargoFieldRegistry::resolveRequestedRow( 1, [] )
+		);
+	}
+
+	public function testResolveRequestedRowAcceptsAKnownId(): void {
+		$this->assertSame(
+			[ 'ok' => true, 'rowId' => 2 ],
+			CargoFieldRegistry::resolveRequestedRow( 2, [ 1, 2, 3 ] )
+		);
+	}
+
+	/**
+	 * Omitting the row id on a multi-row table is ambiguous: the snapshot
+	 * would silently come from whichever row the database returns first.
+	 */
+	public function testResolveRequestedRowRequiresAnIdWhenSeveralRowsExist(): void {
+		$this->assertSame(
+			[ 'ok' => false ],
+			CargoFieldRegistry::resolveRequestedRow( null, [ 1, 2, 3 ] )
+		);
+	}
+
+	/**
+	 * A 0.2.x client that never sent rowid still works on a single-row table,
+	 * and the omitted id is filled in so freshness has a row to compare.
+	 */
+	public function testResolveRequestedRowFillsInTheOnlyRow(): void {
+		$this->assertSame(
+			[ 'ok' => true, 'rowId' => 7 ],
+			CargoFieldRegistry::resolveRequestedRow( null, [ 7 ] )
+		);
+	}
+
+	/**
+	 * No rows at all: leave rowId null so the caller can fail as "no field"
+	 * rather than "no row" — the page simply has no data in that table.
+	 */
+	public function testResolveRequestedRowLeavesNullWhenTheTableIsEmpty(): void {
+		$this->assertSame(
+			[ 'ok' => true, 'rowId' => null ],
+			CargoFieldRegistry::resolveRequestedRow( null, [] )
+		);
+	}
 }

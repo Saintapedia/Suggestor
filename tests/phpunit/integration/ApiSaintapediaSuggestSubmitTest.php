@@ -290,6 +290,42 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 	}
 
 	/**
+	 * Omitting rowid on a multi-row table used to snapshot the first row.
+	 * That is ambiguous, so it is now refused the same as a bogus id.
+	 */
+	public function testOmittingRowIdOnAMultiRowTableIsRefused(): void {
+		$this->createMultiRowCargoFixture( $this->existingPageId() );
+		$this->overrideConfigValue( 'SaintapediaSuggestTables',
+			[ self::FIXTURE_MULTI_TABLE => [ 'EventYear' ] ] );
+
+		$this->assertRefusedWith( 'sps-norow', [
+			'pageid'         => $this->existingPageId(),
+			'table'          => self::FIXTURE_MULTI_TABLE,
+			'field'          => 'EventYear',
+			'suggestedvalue' => '1800',
+		] );
+	}
+
+	/**
+	 * A 0.2.x client that never sent rowid still works against a one-row
+	 * table, and the omitted id is stored so freshness can compare later.
+	 */
+	public function testOmittingRowIdOnASingleRowTableFillsItIn(): void {
+		[ $result ] = $this->submit( [
+			'pageid'         => $this->existingPageId(),
+			'table'          => self::TABLE,
+			'field'          => 'Name',
+			'suggestedvalue' => 'St. Filled In',
+		] );
+
+		$store = MediaWikiServices::getInstance()
+			->getService( 'SaintapediaSuggest.SuggestionStore' );
+		$row = $store->getById( (int)$result['saintapediasuggest']['id'] );
+
+		$this->assertSame( 1, (int)$row->sg_cargo_row_id );
+	}
+
+	/**
 	 * The snapshot must come from the row the reader named, not from whichever
 	 * row the database returns first — that was the multi-row bug.
 	 */

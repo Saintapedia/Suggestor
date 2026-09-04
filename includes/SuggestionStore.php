@@ -61,7 +61,9 @@ class SuggestionStore {
 	 *
 	 * Serializes same-hash submits with a named lock so concurrent COUNTs
 	 * cannot all pass the check at once (including the first-row case where
-	 * the counted range is still empty).
+	 * the counted range is still empty). Duplicate folding uses a second
+	 * lock keyed on the target, because two different IPs would not share
+	 * the rate-limit lock.
 	 *
 	 * @return int|null New id, or null when over the limit / lock unavailable
 	 */
@@ -71,8 +73,8 @@ class SuggestionStore {
 			return null;
 		}
 		$db = $this->loadBalancer->getConnection( DB_PRIMARY );
-		$lockName = 'sps-rl-' . substr( $ipHash, 0, 40 );
-		if ( !$db->lock( $lockName, __METHOD__, 3 ) ) {
+		$ipLock = SuggestionLocks::rateLimitLockName( $ipHash );
+		if ( !$db->lock( $ipLock, __METHOD__, 3 ) ) {
 			return null;
 		}
 		try {
@@ -81,30 +83,52 @@ class SuggestionStore {
 			}
 
 			// Fold this into an existing open suggestion when another reader
-			// already proposed the same value for the same field. Done under
-			// the rate-limit lock so two simultaneous reports of one problem
-			// cannot both become canonical.
+			// already proposed the same value for the same field. The
+			// rate-limit lock is per IP, so two different readers reporting
+			// the same problem would not share it — a second lock keyed on
+			// the target is what stops both inserts becoming canonical.
 			$canonical = null;
-			if ( $data['mergeDuplicates'] ?? true ) {
-				$canonical = $this->findOpenDuplicate(
+			$dupeLock = null;
+			$merge = $data['mergeDuplicates'] ?? true;
+			if ( $merge ) {
+				$dupeLock = SuggestionLocks::duplicateLockName(
 					(int)$data['pageId'],
 					(string)$data['cargoTable'],
 					(string)$data['cargoField'],
-					(string)$data['suggestedValue'],
-					$data['cargoRowId'] ?? null,
-					$db
+					isset( $data['cargoRowId'] ) && $data['cargoRowId'] !== null
+						? (int)$data['cargoRowId']
+						: null
 				);
+				if ( !$db->lock( $dupeLock, __METHOD__, 3 ) ) {
+					return null;
+				}
 			}
-			$data['duplicateOf'] = $canonical;
+			try {
+				if ( $merge ) {
+					$canonical = $this->findOpenDuplicate(
+						(int)$data['pageId'],
+						(string)$data['cargoTable'],
+						(string)$data['cargoField'],
+						(string)$data['suggestedValue'],
+						$data['cargoRowId'] ?? null,
+						$db
+					);
+				}
+				$data['duplicateOf'] = $canonical;
 
-			$id = $this->insertOn( $db, $data );
+				$id = $this->insertOn( $db, $data );
 
-			if ( $canonical !== null ) {
-				$this->bumpDuplicateCount( $db, $canonical );
+				if ( $canonical !== null ) {
+					$this->bumpDuplicateCount( $db, $canonical );
+				}
+				return $id;
+			} finally {
+				if ( $dupeLock !== null ) {
+					$db->unlock( $dupeLock, __METHOD__ );
+				}
 			}
-			return $id;
 		} finally {
-			$db->unlock( $lockName, __METHOD__ );
+			$db->unlock( $ipLock, __METHOD__ );
 		}
 	}
 

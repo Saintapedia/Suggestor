@@ -2,6 +2,64 @@
 
 Releases are tagged. Pin a production wiki to a tag, not to floating `main`.
 
+## 0.6.0 — 2026-09-04
+
+### Fixes
+
+- **Clicking a row's action button could act on the wrong suggestion.** The
+  bulk-select form wrapped every row in the dashboard's suggestion list, so
+  each row's hidden `sps_id` field shared one name across the whole form.
+  Submitting is a single POST, and PHP keeps only the last value for a
+  repeated field name — so "Mark actioned" on any row could silently apply to
+  whichever row happened to render last, not the one actually clicked. The
+  row id is now encoded directly in the clicked button's value
+  (`sps_status=12:actioned`) instead of a separate hidden field, so the
+  browser can only ever submit the id of the button that was pressed. The
+  per-row reviewer note (`sps_worknote`) had the identical bug and is fixed
+  the same way, via PHP array-keyed field names (`sps_worknote[12]`).
+- **Omitting `rowid` on a multi-row Cargo table silently snapshotted row
+  one.** The API's own comment claimed "the API always passes an explicit
+  id," but nothing enforced that — an omitted id fell through to whichever
+  row the database returned first. A submission against an ambiguous table
+  is now refused (`sps-norow`) unless the table holds exactly one row, in
+  which case the id is filled in automatically so the stored snapshot still
+  names a specific row.
+- **Two different readers reporting the same value could both become
+  canonical.** Duplicate folding ran under the per-IP rate-limit lock, which
+  does nothing for two different IPs racing each other — both could pass
+  `findOpenDuplicate()` before either inserted, producing two "canonical"
+  rows for one problem. A second lock keyed on the target
+  (page, table, field, row) now serializes duplicate folding independent of
+  who is submitting.
+
+### Features
+
+- **Copy** and **Edit article** on each dashboard row. Copy puts the
+  proposed value on the clipboard (falls back to `execCommand` on older
+  browsers; the value stays selectable with scripting off either way).
+  Edit article opens the page in edit mode in a new tab. Neither writes
+  anything — the reviewer still copies, edits by hand, saves, then marks
+  the suggestion actioned.
+
+### Tests
+
+- Regression tests for all three fixes, including a live-POST style test
+  that reproduces the shared-form field collision.
+
+### Upgrade notes
+
+No `update.php` required — no schema change. If anything outside the widget
+calls the submit API directly and previously relied on an omitted `rowid`
+resolving to row one of a multi-row table, that call now gets `sps-norow`
+and must send the id.
+
+### Install pin
+
+```bash
+git clone --branch v0.6.0 --depth 1 \
+  https://github.com/Saintapedia/Suggestor.git SaintapediaSuggest
+```
+
 ## 0.5.0 — 2026-09-02
 
 First tagged release.

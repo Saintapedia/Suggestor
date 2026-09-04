@@ -120,4 +120,37 @@ class SuggestFilters {
 		}
 		return (int)( floor( ( $total - 1 ) / $limit ) * $limit );
 	}
+
+	/**
+	 * Decode a per-row dashboard submit value "{id}:{status}".
+	 *
+	 * A single form wraps every row, so a hidden sps_id per row would all
+	 * submit and PHP would keep the last one. Encoding the id on the
+	 * clicked button is what makes "Mark actioned" hit the row that was
+	 * clicked. Pure; unit-testable.
+	 *
+	 * @return array{id:int,status:string}|null
+	 */
+	public static function parseRowAction( ?string $value ): ?array {
+		if ( $value === null || $value === '' ) {
+			return null;
+		}
+		$pos = strpos( $value, ':' );
+		if ( $pos === false ) {
+			return null;
+		}
+		$idPart = substr( $value, 0, $pos );
+		$status = substr( $value, $pos + 1 );
+		if ( $idPart === '' || !ctype_digit( $idPart ) ) {
+			return null;
+		}
+		$id = (int)$idPart;
+		if ( $id < 1 ) {
+			return null;
+		}
+		if ( !in_array( $status, self::processActions(), true ) ) {
+			return null;
+		}
+		return [ 'id' => $id, 'status' => $status ];
+	}
 }

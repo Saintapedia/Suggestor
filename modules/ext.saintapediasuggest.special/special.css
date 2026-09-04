@@ -217,8 +217,39 @@
 }
 
 .sps-value-suggested {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.4rem;
 	background: #eaf3ff;
 	border-left: 3px solid #36c;
+}
+
+.sps-copy-value {
+	flex: 1 1 10rem;
+	min-width: 0;
+	word-break: break-word;
+}
+
+.sps-copy,
+.sps-edit {
+	padding: 0.2rem 0.55rem;
+	border: 1px solid #a2a9b1;
+	border-radius: 2px;
+	background: #fff;
+	font-size: 0.75rem;
+	line-height: 1.4;
+	color: #202122;
+	text-decoration: none;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.sps-copy:hover,
+.sps-edit:hover {
+	background: #f8f9fa;
+	text-decoration: none;
+	color: #202122;
 }
 
 .sps-comment,

@@ -211,6 +211,10 @@ $wgSaintapediaSuggestNotifyEmail    = 'data@example.org';
 | `Special:SaintapediaSuggest/export/<pageid>` | JSON for one article |
 | Toolbox → **Field suggestions** | Jump to this page's suggestions (users with the right) |
 
+Each row has **Copy** (the proposed value) and **Edit article** (opens the
+page in edit mode in a new tab). Nothing is written back: copy, paste into
+the template, save, then mark the suggestion **actioned**.
+
 The dashboard also has a **Go to page** box for jumping straight to one
 article's suggestions by title.
 
@@ -366,7 +370,7 @@ action=saintapediasuggest  (POST, csrf token required)
 | `pageid` | yes | Page whose Cargo row is being corrected |
 | `table` | yes | Cargo table — must be allow-listed |
 | `field` | yes | Cargo field — must be allow-listed and in the live schema |
-| `rowid` | when ambiguous | Cargo `_ID` of the row being corrected. Optional for a single-row table; an id that does not belong to this page and table is refused with `sps-norow` |
+| `rowid` | when ambiguous | Cargo `_ID` of the row being corrected. Optional for a single-row table (the omitted id is filled in). On a table with two or more rows for that page, omitting it is `sps-norow`, same as an id that does not belong to this page and table |
 | `suggestedvalue` | yes | Proposed value |
 | `comment` | no | Free-text explanation |
 | `email` | no | Contact email, stored only when the email field is enabled |
@@ -375,9 +379,9 @@ action=saintapediasuggest  (POST, csrf token required)
 Checks run in this order, cheapest first, so a malformed request never burns the
 reader's one-time hCaptcha token or an outbound `siteverify` round-trip:
 
-**block → title/namespace → allow-list → row belongs to this page → current
-value exists → value non-empty / not unchanged → captcha → per-IP rate limit →
-insert**
+**block → title/namespace → allow-list → row belongs to this page (or is
+unambiguous) → current value exists → value non-empty / not unchanged → captcha
+→ per-IP rate limit → insert**
 
 The response is `{ result, id }` and nothing else. **Contact emails are never
 exposed on the public API**, and the API never writes to Cargo.
@@ -395,7 +399,9 @@ a submitter fabricate the before-state a reviewer sees.
 - The rate limit uses a **salted SHA-256 of the IP** (`$wgSecretKey`). The raw address is never stored.
 - Rate-limit counting takes a named DB lock keyed on the IP hash, so concurrent
   submits cannot all pass the check at once — including the first-row case where
-  the counted range is still empty.
+  the counted range is still empty. Duplicate folding takes a second lock keyed
+  on the target (page, table, field, row), so two different IPs reporting the
+  same value cannot both become canonical.
 - Reader-supplied text reaches the dashboard through `Html::element()` /
   `->text()` only — never `rawElement` — so a suggested value cannot inject markup.
 - Dashboard list and export queries never select the contact-email column; it is
@@ -447,11 +453,12 @@ cd /path/to/mediawiki
 php vendor/bin/phpunit --group SaintapediaSuggest
 ```
 
-56 tests covering `SuggestionStore` against a real database (rate-limit locking,
-duplicate folding, audit entries, the per-page mutation guard, search escaping,
-contact-email column exclusion, batch marking), `CargoFieldRegistry` against a
-real Cargo schema, and the submit API end to end — refusal ordering, the
-server-side snapshot, Coordinates fields, and duplicate folding through HTTP.
+Integration tests covering `SuggestionStore` against a real database (rate-limit
+locking, duplicate folding, audit entries, the per-page mutation guard, search
+escaping, contact-email column exclusion, batch marking), `CargoFieldRegistry`
+against a real Cargo schema, and the submit API end to end — refusal ordering,
+the server-side snapshot, Coordinates fields, omitted `rowid` on multi-row
+tables, and duplicate folding through HTTP.
 
 **The Cargo tests build their own fixture** (`CargoFixtureTrait`) rather than
 reading whatever the wiki contains. MediaWiki's test framework clones tables
@@ -627,6 +634,21 @@ files here.
 ---
 
 ## Version
+
+**0.6.0** — dashboard Copy + Edit article (still no write-back); omit `rowid`
+on a multi-row table is refused; duplicate folding lock is per target, not
+per IP; per-row status buttons encode the id so a list click cannot hit the
+last row on the page.
+
+**0.5.0** — flag suggestions the live Cargo value has moved past.
+
+**0.4.0** — let another extension own the entry point.
+
+**0.3.1** — actually meet the >= 1.39 requirement.
+
+**0.3.0** — record which Cargo row a suggestion targets.
+
+**0.2.1** — stack the widget above SaintapediaFeedback.
 
 **0.2.0** — duplicate folding, suggestion detail view with audit trail, page
 lookup, batch exporter, named config registry, es/fr/it/pt, integration suite.

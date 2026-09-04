@@ -430,9 +430,10 @@ class CargoFieldRegistry {
 	 * The API uses this to snapshot sg_current_value server-side.
 	 *
 	 * $rowId names which of the page's rows to read. Passing null reads the
-	 * first row, which is correct only for single-row tables — the API always
-	 * passes an explicit id, so an ambiguous target is refused rather than
-	 * silently resolved to whichever row the database happened to return.
+	 * first row, which is correct only for single-row tables — the API
+	 * resolves an omitted id through resolveRequestedRow() first, so an
+	 * ambiguous target is refused rather than silently resolved to whichever
+	 * row the database happened to return.
 	 */
 	public function getCurrentValue(
 		int $pageId,
@@ -473,16 +474,55 @@ class CargoFieldRegistry {
 	 * before trusting a row id from the request.
 	 */
 	public function isValidRow( int $pageId, string $table, int $rowId ): bool {
+		return in_array( $rowId, $this->getRowIds( $pageId, $table ), true );
+	}
+
+	/**
+	 * Cargo _ID values this page actually holds in $table, in stable order.
+	 *
+	 * @return int[]
+	 */
+	public function getRowIds( int $pageId, string $table ): array {
 		$fields = $this->getAllowedFields( $table );
 		if ( !$fields ) {
-			return false;
+			return [];
 		}
+		$ids = [];
 		foreach ( $this->readRows( $table, $fields, $pageId ) as $row ) {
-			if ( $row['_ID'] === $rowId ) {
-				return true;
-			}
+			$ids[] = $row['_ID'];
 		}
-		return false;
+		return $ids;
+	}
+
+	/**
+	 * Decide which Cargo row a submit is targeting.
+	 *
+	 * A named id must belong to this page and table. An omitted id is only
+	 * allowed when the table has zero rows (caller fails as "no field") or
+	 * exactly one (filled in so the stored snapshot is not ambiguous). Two
+	 * or more rows without an id would snapshot whichever row the database
+	 * returned first.
+	 *
+	 * Pure; unit-testable. $existingIds is the result of getRowIds().
+	 *
+	 * @param int[] $existingIds
+	 * @return array{ok:true,rowId:int|null}|array{ok:false}
+	 */
+	public static function resolveRequestedRow( ?int $requested, array $existingIds ): array {
+		if ( $requested !== null ) {
+			if ( !in_array( $requested, $existingIds, true ) ) {
+				return [ 'ok' => false ];
+			}
+			return [ 'ok' => true, 'rowId' => $requested ];
+		}
+		$count = count( $existingIds );
+		if ( $count > 1 ) {
+			return [ 'ok' => false ];
+		}
+		if ( $count === 1 ) {
+			return [ 'ok' => true, 'rowId' => $existingIds[0] ];
+		}
+		return [ 'ok' => true, 'rowId' => null ];
 	}
 
 	/**

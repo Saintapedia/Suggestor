@@ -88,12 +88,19 @@ class ApiSaintapediaSuggestSubmit extends ApiBase {
 		// Which row of that table. A page can hold several rows in one Cargo
 		// table, so a suggestion without a row is ambiguous; an id that does
 		// not belong to this page and table is refused rather than quietly
-		// resolved to whichever row the database returns first.
+		// resolved to whichever row the database returns first. An omitted
+		// id on a one-row table is filled in so the stored snapshot names
+		// the row freshness will later compare.
 		$pageId = $title->getArticleID();
 		$rowId = $params['rowid'] !== null ? (int)$params['rowid'] : null;
-		if ( $rowId !== null && !$this->registry->isValidRow( $pageId, $cargoTable, $rowId ) ) {
+		$resolved = CargoFieldRegistry::resolveRequestedRow(
+			$rowId,
+			$this->registry->getRowIds( $pageId, $cargoTable )
+		);
+		if ( !$resolved['ok'] ) {
 			$this->dieWithError( 'saintapediasuggest-error-norow', 'sps-norow' );
 		}
+		$rowId = $resolved['rowId'];
 
 		// The current value is snapshotted server-side. A client-supplied
 		// "current value" would let a submitter fabricate the before-state
@@ -235,8 +242,8 @@ class ApiSaintapediaSuggestSubmit extends ApiBase {
 				ParamValidator::PARAM_TYPE     => 'string',
 				ParamValidator::PARAM_REQUIRED => true,
 			],
-			// Optional so a single-row table needs no row id, and so clients
-			// written against 0.2.x keep working.
+			// Optional only for a single-row table (and for 0.2.x clients
+			// against one). Two or more rows without an id is sps-norow.
 			'rowid' => [
 				ParamValidator::PARAM_TYPE => 'integer',
 			],
