@@ -1,6 +1,6 @@
 # SaintapediaSuggest production deploy
 
-**Stable release: v0.5.0** — pin prod to this tag. Do not track floating `main`.
+**Stable release: v0.6.0** — pin prod to this tag. Do not track floating `main`.
 
 See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 
@@ -13,7 +13,7 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 
    ```bash
    cd /path/to/mediawiki/w/extensions   # or user-extensions on Canasta
-   git clone --branch v0.5.0 --depth 1 \
+   git clone --branch v0.6.0 --depth 1 \
      https://github.com/Saintapedia/Suggestor.git SaintapediaSuggest
    ```
 
@@ -99,7 +99,7 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 ## Rollback
 
 ```bash
-cd extensions/SaintapediaSuggest && git fetch --tags && git checkout v0.5.0
+cd extensions/SaintapediaSuggest && git fetch --tags && git checkout v0.6.0
 # or remove SaintapediaSuggest from settings.yaml and restart
 ```
 
