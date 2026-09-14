@@ -37,7 +37,7 @@ class CargoFieldRegistry {
 	public const MAX_ROW_LABEL_LENGTH = 60;
 
 	/** Fallback when $wgSaintapediaSuggestMaxRowsPerTable is unset/invalid. */
-	private const DEFAULT_MAX_ROWS = 25;
+	private const DEFAULT_MAX_ROWS = 50;
 
 	private Config $config;
 	private ILoadBalancer $loadBalancer;
@@ -539,8 +539,24 @@ class CargoFieldRegistry {
 		if ( !$rows ) {
 			return null;
 		}
+
+		// A null id was only ever resolved as unambiguous when the table had
+		// at most one row at that earlier read (resolveRequestedRow()). This
+		// is a second, independent read, so a concurrent Cargo write can have
+		// added rows in between — re-checking count here, not just presence,
+		// is what keeps that race from silently landing on "whichever row
+		// came back first" instead of refusing.
+		if ( $rowId === null ) {
+			if ( count( $rows ) > 1 ) {
+				return null;
+			}
+			$row = $rows[0];
+			$row['ordinal'] = 1;
+			return $row;
+		}
+
 		foreach ( $rows as $ordinal => $row ) {
-			if ( $rowId === null || $row['_ID'] === $rowId ) {
+			if ( $row['_ID'] === $rowId ) {
 				$row['ordinal'] = $ordinal + 1;
 				return $row;
 			}

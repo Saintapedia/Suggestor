@@ -383,7 +383,11 @@
 			// Pre-fill with the stored value so the reader edits rather than
 			// retypes — most corrections are small.
 			var f = config.fields[ selectedIndex ];
-			if ( f && suggestedInput.value === '' ) {
+			if ( f ) {
+				// Always overwrite: whatever was typed belonged to the
+				// previously selected field. Carrying it over would submit
+				// that text as the proposed value for a field it was never
+				// written for.
 				suggestedInput.value = f.value;
 			}
 			status.textContent = '';

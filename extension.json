@@ -277,8 +277,8 @@
 			"description": "Map of Cargo table name => field whose value names each row in the picker, for tables where a page stores several rows. Unset tables fall back to the first allow-listed field that has a value, then to \"Row N\"."
 		},
 		"SaintapediaSuggestMaxRowsPerTable": {
-			"value": 25,
-			"description": "Cap on how many rows of one Cargo table are offered for a single page, so a page with hundreds of rows cannot inflate the widget."
+			"value": 50,
+			"description": "Cap on how many rows of one Cargo table are offered for a single page, so a page with hundreds of rows cannot inflate the widget. Also bounds row-id validation (getRowIds()): a real row beyond this cap is invisible to the extension and any submission naming it is refused, so raise this if a page's allow-listed table can hold more rows than the default."
 		},
 		"SaintapediaSuggestEntryPoint": {
 			"value": "button",

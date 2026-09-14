@@ -58,7 +58,7 @@ class EchoHooks {
 		$userFactory = MediaWikiServices::getInstance()->getUserFactory();
 		foreach ( $ids as $id ) {
 			$user = $userFactory->newFromId( (int)$id );
-			if ( SuggestAccess::isPersistentAccount( $user ) ) {
+			if ( SuggestAccess::isPersistentAccount( $user ) && SuggestAccess::userCanManage( $user ) ) {
 				$users[] = $user;
 			}
 		}
