@@ -2,6 +2,53 @@
 
 Releases are tagged. Pin a production wiki to a tag, not to floating `main`.
 
+## 0.6.1 — 2026-09-13
+
+Fixes from a pre-production code review, ahead of the first deploy to
+saintapedia.org.
+
+### Fixes
+
+- **A revoked user could still receive an Echo notification carrying the
+  reader's proposed value.** `locateNotifiedUsers()` re-checked only whether
+  the recipient was a persistent account, not whether they still had
+  dashboard access — its own docblock claimed the latter, but nothing
+  enforced it. Now also calls `SuggestAccess::userCanManage()`, so access
+  pulled between submit and notification delivery actually blocks it.
+- **The 0.6.0 ambiguous-rowid fix had a gap: two unsynchronized reads of the
+  same table in one request.** The submit API validates row ids by reading
+  a table once (`getRowIds()`), then reads it again independently
+  (`getCurrentValue()`/`getRowLabel()`) to snapshot the value. If a
+  concurrent Cargo write added rows between those two reads, an omitted
+  `rowid` — correctly resolved as unambiguous against the first, single-row
+  read — could land on whichever row the second read returned first instead
+  of being refused. `CargoFieldRegistry::findRow()` now re-checks the row
+  count on its own read before accepting a null id, so a table that turns
+  out to have more than one row is refused rather than guessed at.
+- **Switching the suggestion field could carry the previous field's typed
+  text over as the new field's proposed value.** The widget only pre-filled
+  the value box when it was empty, so text typed for "Phone" stayed in the
+  box — attributed to "Address" — after switching the dropdown. It now
+  always repopulates on a field switch.
+
+### Config
+
+- `$wgSaintapediaSuggestMaxRowsPerTable` default raised 25 → 50. A row past
+  the cap is invisible to row-existence checks, so any page whose
+  allow-listed table can hold more rows than the cap needs it raised
+  further.
+
+### Upgrade notes
+
+No `update.php` required — no schema change.
+
+### Install pin
+
+```bash
+git clone --branch v0.6.1 --depth 1 \
+  https://github.com/Saintapedia/Suggestor.git SaintapediaSuggest
+```
+
 ## 0.6.0 — 2026-09-04
 
 ### Fixes
