@@ -2,6 +2,7 @@
 
 namespace MediaWiki\Extension\SaintapediaSuggest\Tests\Unit;
 
+use MediaWiki\Extension\SaintapediaSuggest\Cargo\CargoFieldRegistry;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestWikiConfig;
 use PHPUnit\Framework\TestCase;
 
@@ -81,6 +82,66 @@ class SuggestWikiConfigParseTest extends TestCase {
 		$this->assertArrayHasKey( 'SaintapediaSuggestNotifyUsersPage', $pages );
 		$this->assertArrayHasKey( 'SaintapediaSuggestRequireCaptchaPage', $pages );
 		$this->assertArrayHasKey( 'SaintapediaSuggestEnabledPage', $pages );
+		$this->assertArrayHasKey( 'SaintapediaSuggestTablesPage', $pages );
+	}
+
+	public function testParseTableLinesReadsFieldsAndWildcards(): void {
+		// Raw, pre-normalize shape: a bare table name collapses to `true`
+		// here, but "Table: *" does not — normalizeAllowList() is what
+		// recognizes a literal '*' among the fields and widens it to `true`,
+		// matching how the PHP-config $wgSaintapediaSuggestTables form
+		// already behaves. Both sources get identical treatment past this
+		// point.
+		$this->assertSame(
+			[
+				'Footprints' => [ 'LocationTitle', 'Address', 'City' ],
+				'Parishes'   => [ '*' ],
+				'Dioceses'   => true,
+			],
+			SuggestWikiConfig::parseTableLines( [
+				'Footprints: LocationTitle, Address, City',
+				'Parishes: *',
+				'Dioceses',
+			] )
+		);
+	}
+
+	public function testParseTableLinesFeedsNormalizeAllowListCleanly(): void {
+		$parsed = SuggestWikiConfig::parseTableLines( [
+			'Footprints: LocationTitle, Address, _ID',
+			'Parishes: *',
+		] );
+		$this->assertSame(
+			[
+				'Footprints' => [ 'LocationTitle', 'Address' ],
+				'Parishes'   => true,
+			],
+			CargoFieldRegistry::normalizeAllowList( $parsed )
+		);
+	}
+
+	public function testParseTableLinesSkipsALineWithNoTableName(): void {
+		$this->assertSame(
+			[ 'Footprints' => true ],
+			SuggestWikiConfig::parseTableLines( [ ': Address, City', 'Footprints' ] )
+		);
+	}
+
+	public function testParseTableLinesTrimsFieldWhitespace(): void {
+		$this->assertSame(
+			[ 'Footprints' => [ 'LocationTitle', 'Address' ] ],
+			SuggestWikiConfig::parseTableLines( [ 'Footprints:  LocationTitle ,  Address  ' ] )
+		);
+	}
+
+	public function testEffectiveTablesRawFallsBackToPhpValue(): void {
+		// No MediaWiki services (the standalone unit bootstrap) and a
+		// missing/empty on-wiki page (this suite's run through MediaWiki's
+		// own phpunit.php, where MediaWiki:SaintapediaSuggest-tables does
+		// not exist) both take different code paths to the same outcome:
+		// degrade to the PHP value rather than fatal or return nothing.
+		$phpValue = [ 'Footprints' => [ 'Address' ] ];
+		$this->assertSame( $phpValue, SuggestWikiConfig::effectiveTablesRaw( $phpValue ) );
 	}
 
 	public function testOverlayReadFailureMessageSaysWhatItDid(): void {

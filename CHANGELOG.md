@@ -2,6 +2,38 @@
 
 Releases are tagged. Pin a production wiki to a tag, not to floating `main`.
 
+## 0.7.0 — 2026-09-14
+
+### Features
+
+- **The Cargo table/field allow-list is now wiki-editable.** New
+  `MediaWiki:SaintapediaSuggest-tables` page, one `Table: Field1, Field2` /
+  `Table: *` / bare `Table` line per table, joins the settings that were
+  already on-wiki-overridable (rate limit, notify-users, require-captcha,
+  enabled). Missing or empty page falls back to `$wgSaintapediaSuggestTables`
+  unchanged.
+
+  This is a narrower exposure than the access-control settings
+  SaintapediaFeedback 1.9.0 deliberately pulled *out* of the wiki: the
+  allow-list only offers a "suggest a correction" affordance on Cargo fields
+  already rendered publicly on the page, and every submission still lands in
+  the review queue rather than writing anywhere — an over-broad wiki edit
+  here produces an odd-looking suggestion for a triager to reject, not a
+  data or privacy exposure.
+
+### Upgrade notes
+
+No `update.php` required — no schema change. Existing `$wgSaintapediaSuggestTables`
+installs are unaffected: the on-wiki page is additive and does nothing until
+someone creates it.
+
+### Install pin
+
+```bash
+git clone --branch v0.7.0 --depth 1 \
+  https://github.com/Saintapedia/Suggestor.git SaintapediaSuggest
+```
+
 ## 0.6.1 — 2026-09-13
 
 Fixes from a pre-production code review, ahead of the first deploy to

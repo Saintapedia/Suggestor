@@ -1,6 +1,6 @@
 # SaintapediaSuggest production deploy
 
-**Stable release: v0.6.1** — pin prod to this tag. Do not track floating `main`.
+**Stable release: v0.7.0** — pin prod to this tag. Do not track floating `main`.
 
 See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 
@@ -13,7 +13,7 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 
    ```bash
    cd /path/to/mediawiki/w/extensions   # or user-extensions on Canasta
-   git clone --branch v0.6.1 --depth 1 \
+   git clone --branch v0.7.0 --depth 1 \
      https://github.com/Saintapedia/Suggestor.git SaintapediaSuggest
    ```
 
@@ -31,21 +31,12 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
      - SaintapediaSuggest
    ```
 
-3. Configure. **Nothing is suggestable until a table is opted in** — that is the
-   safe default, not a misconfiguration:
+3. Configure the parts that stay in `LocalSettings.php` — secrets, and the
+   handful of settings not meant to be wiki-editable:
 
    ```php
    $wgSaintapediaSuggestMode       = 'public';
    $wgSaintapediaSuggestNamespaces = [ NS_MAIN ];
-   $wgSaintapediaSuggestRateLimit  = 5;
-
-   // Only these fields become suggestable.
-   $wgSaintapediaSuggestTables = [
-       'Parishes' => [ 'Address', 'Phone', 'Website' ],
-   ];
-
-   // Name each row when a page stores several in one table.
-   // $wgSaintapediaSuggestRowLabelField = [ 'Sightings' => 'LocationTitle' ];
 
    // hCaptcha via ConfirmEdit — secrets here, never on a wiki page.
    // (Skip if another extension already loads ConfirmEdit/hCaptcha.)
@@ -60,6 +51,32 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
    $wgSaintapediaSuggestEntryPoint = 'none';   // needs SaintapediaFeedback >= 1.8.0
    ```
 
+   **Everything else is wiki-editable, no deploy needed** — one
+   `MediaWiki:`-namespace page per setting (`editinterface` right required to
+   edit), read with an hour's WAN cache and invalidated immediately on save:
+
+   | Page | Holds | PHP fallback |
+   |------|-------|--------------|
+   | `MediaWiki:SaintapediaSuggest-tables` | The allow-list. **Nothing is suggestable until a table is opted in** — that is the safe default, not a misconfiguration. One line per table: `Table: Field1, Field2`, `Table: *` for every field, or bare `Table` (also every field). | `$wgSaintapediaSuggestTables` |
+   | `MediaWiki:SaintapediaSuggest-ratelimit` | A single integer, the per-IP daily cap. | `$wgSaintapediaSuggestRateLimit` |
+   | `MediaWiki:SaintapediaSuggest-require-captcha` | `true`/`false`. | `$wgSaintapediaSuggestRequireCaptcha` |
+   | `MediaWiki:SaintapediaSuggest-enabled` | `true`/`false`, master widget switch. | `$wgSaintapediaSuggestEnabled` |
+   | `MediaWiki:SaintapediaSuggest-notify-users` | One username per line, who gets Echo alerts. | `$wgSaintapediaSuggestNotifyUsers` |
+
+   Example `MediaWiki:SaintapediaSuggest-tables` page body:
+
+   ```
+   Footprints: LocationTitle, Coordinates, Address, City, AdministrativeSubdivision, Country, Diocese, SiteType, VisitAccess, EventYear, Sources
+   ```
+
+   `$wgSaintapediaSuggestRowLabelField` (which field names each row of a
+   multi-row table in the picker) has no wiki-page override yet and stays in
+   `LocalSettings.php`:
+
+   ```php
+   $wgSaintapediaSuggestRowLabelField = [ 'Footprints' => 'LocationTitle' ];
+   ```
+
 4. **Run `update.php`** — required; this extension has its own tables:
 
    ```bash
@@ -69,7 +86,7 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 
    Creates `sps_suggestion` and `sps_suggestion_log`.
 
-5. Restart web and confirm **Special:Version** lists SaintapediaSuggest **0.6.1**.
+5. Restart web and confirm **Special:Version** lists SaintapediaSuggest **0.7.0**.
 
 ## Smoke checklist
 
@@ -99,7 +116,7 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 ## Rollback
 
 ```bash
-cd extensions/SaintapediaSuggest && git fetch --tags && git checkout v0.6.1
+cd extensions/SaintapediaSuggest && git fetch --tags && git checkout v0.7.0
 # or remove SaintapediaSuggest from settings.yaml and restart
 ```
 
@@ -112,7 +129,7 @@ rollback cannot corrupt wiki content.
 
 ## Known gaps
 
-- **Never run with real reader traffic.** Every claim below rests on 118 unit
+- **Never run with real reader traffic.** Every claim below rests on 123 unit
   tests, 78 integration tests and scratch-wiki verification, not production use.
 - `>= 1.39` is accurate by inspection (core's `HISTORY` for the namespace moves,
   plus the `class_alias` shims in 1.43) but has not been executed on a real

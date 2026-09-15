@@ -1,6 +1,6 @@
 {
 	"name": "SaintapediaSuggest",
-	"version": "0.6.1",
+	"version": "0.7.0",
 	"author": [
 		"Saintapedia contributors"
 	],
@@ -251,6 +251,10 @@
 		"SaintapediaSuggestEnabledPage": {
 			"value": "SaintapediaSuggest-enabled",
 			"description": "MediaWiki-namespace page holding true/false to switch the reader widget off wiki-wide without a deploy. Missing/empty page falls back to SaintapediaSuggestEnabled."
+		},
+		"SaintapediaSuggestTablesPage": {
+			"value": "SaintapediaSuggest-tables",
+			"description": "MediaWiki-namespace page, one 'Table: field1, field2' or 'Table: *' or bare 'Table' line per Cargo table, overriding SaintapediaSuggestTables without a deploy. Missing/empty page falls back to SaintapediaSuggestTables."
 		},
 		"SaintapediaSuggestEnabled": {
 			"value": true,

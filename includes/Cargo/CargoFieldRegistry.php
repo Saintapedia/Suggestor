@@ -6,6 +6,7 @@ use CargoTableSchema;
 use CargoUtils;
 use Config;
 use ExtensionRegistry;
+use MediaWiki\Extension\SaintapediaSuggest\SuggestWikiConfig;
 use Wikimedia\Rdbms\ILoadBalancer;
 
 /**
@@ -14,9 +15,11 @@ use Wikimedia\Rdbms\ILoadBalancer;
  *
  * Two independent gates, both of which a target must pass:
  *
- *  1. The wiki's allow-list ($wgSaintapediaSuggestTables). Without an entry
- *     nothing is suggestable — the default is an empty map, so installing
- *     the extension does not expose any data until an admin opts a table in.
+ *  1. The wiki's allow-list ($wgSaintapediaSuggestTables, optionally
+ *     overridden by the MediaWiki:SaintapediaSuggest-tables page — see
+ *     SuggestWikiConfig::effectiveTablesRaw()). Without an entry nothing is
+ *     suggestable — the default is an empty map, so installing the
+ *     extension does not expose any data until an admin opts a table in.
  *  2. The live Cargo schema. A table must be in CargoUtils::getTables() and
  *     a field must exist in that table's CargoTableSchema. This is what
  *     keeps a hand-edited LocalSettings entry from reaching the database
@@ -47,6 +50,9 @@ class CargoFieldRegistry {
 
 	/** @var string[]|null Lazily loaded list of real Cargo tables */
 	private ?array $tableCache = null;
+
+	/** @var array<string,true|string[]>|null Lazily loaded, per-request */
+	private ?array $allowListCache = null;
 
 	public function __construct( Config $config, ILoadBalancer $loadBalancer ) {
 		$this->config = $config;
@@ -166,12 +172,22 @@ class CargoFieldRegistry {
 	}
 
 	/**
-	 * The configured allow-list, normalized.
+	 * The effective allow-list, normalized: the on-wiki
+	 * MediaWiki:SaintapediaSuggest-tables page when it holds any
+	 * recognizable lines, else $wgSaintapediaSuggestTables. Memoized per
+	 * request — this is called on every getAllowedFields() lookup, and the
+	 * wiki-page read behind it is only WAN-cached, not free.
 	 *
 	 * @return array<string,true|string[]>
 	 */
 	public function getAllowList(): array {
-		return self::normalizeAllowList( $this->config->get( 'SaintapediaSuggestTables' ) );
+		if ( $this->allowListCache !== null ) {
+			return $this->allowListCache;
+		}
+		$phpValue = $this->config->get( 'SaintapediaSuggestTables' );
+		$raw = SuggestWikiConfig::effectiveTablesRaw( is_array( $phpValue ) ? $phpValue : [] );
+		$this->allowListCache = self::normalizeAllowList( $raw );
+		return $this->allowListCache;
 	}
 
 	/**

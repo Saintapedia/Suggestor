@@ -7,7 +7,8 @@ use Title;
 
 /**
  * On-wiki overrides for non-secret operational knobs: rate limit,
- * notify-user list, captcha-required, widget on/off.
+ * notify-user list, captcha-required, widget on/off, and the Cargo
+ * table/field allow-list.
  *
  * Mirrors SuggestAccess's MediaWiki:-page pattern: one page per setting,
  * PHP config is the fallback when the page is missing/empty, WAN-cached,
@@ -34,6 +35,7 @@ class SuggestWikiConfig {
 			'SaintapediaSuggestNotifyUsersPage' => 'SaintapediaSuggest-notify-users',
 			'SaintapediaSuggestRequireCaptchaPage' => 'SaintapediaSuggest-require-captcha',
 			'SaintapediaSuggestEnabledPage' => 'SaintapediaSuggest-enabled',
+			'SaintapediaSuggestTablesPage' => 'SaintapediaSuggest-tables',
 		];
 	}
 
@@ -229,6 +231,62 @@ class SuggestWikiConfig {
 		}
 		$lines = self::parseLines( $text );
 		return $lines ?: $phpValue;
+	}
+
+	/**
+	 * Parse "Table: field1, field2" / "Table: *" / bare "Table" lines into
+	 * the raw shape CargoFieldRegistry::normalizeAllowList() accepts.
+	 *
+	 * Pure; unit-testable. Lines are expected to already be comment- and
+	 * bullet-stripped by parseLines().
+	 *
+	 * @param string[] $lines
+	 * @return array<string,true|string[]>
+	 */
+	public static function parseTableLines( array $lines ): array {
+		$raw = [];
+		foreach ( $lines as $line ) {
+			$parts = explode( ':', $line, 2 );
+			$table = trim( $parts[0] );
+			if ( $table === '' ) {
+				continue;
+			}
+			$raw[$table] = isset( $parts[1] ) && trim( $parts[1] ) !== ''
+				? array_map( 'trim', explode( ',', $parts[1] ) )
+				: true;
+		}
+		return $raw;
+	}
+
+	/**
+	 * Effective Cargo table/field allow-list, in the raw (pre-normalize)
+	 * shape: on-wiki override wins when the page has any recognizable
+	 * lines, else the PHP default. Callers still run the result through
+	 * CargoFieldRegistry::normalizeAllowList() themselves, so both sources
+	 * get identical validation regardless of where the list came from.
+	 *
+	 * Unlike SaintapediaFeedback's access-control settings, this is not
+	 * treated as security-sensitive enough to keep LocalSettings-only: it
+	 * only decides which already-public Cargo fields get a "suggest a
+	 * correction" affordance, and nothing here is auto-applied — every
+	 * submission still lands in the review queue.
+	 *
+	 * @param array<string,true|string[]> $phpRawValue
+	 * @return array<string,true|string[]>
+	 */
+	public static function effectiveTablesRaw( array $phpRawValue ): array {
+		[ $text, $readFailed, $error ] = self::loadText(
+			'SaintapediaSuggestTablesPage', 'SaintapediaSuggest-tables'
+		);
+		if ( $readFailed ) {
+			self::logOverlayReadFailure( 'SaintapediaSuggestTablesPage', false, $error );
+			return $phpRawValue;
+		}
+		$lines = self::parseLines( $text );
+		if ( !$lines ) {
+			return $phpRawValue;
+		}
+		return self::parseTableLines( $lines );
 	}
 
 	public static function getPageTitle( string $pageConfigKey, string $pageDefault ): ?Title {
