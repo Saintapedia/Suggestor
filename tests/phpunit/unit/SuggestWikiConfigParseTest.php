@@ -37,8 +37,11 @@ class SuggestWikiConfigParseTest extends TestCase {
 	}
 
 	/**
-	 * A cache or database blip must not be able to switch the captcha off:
-	 * the captcha caller passes onReadError = true so it fails closed.
+	 * A caller protecting a security-relevant flag can pass onReadError =
+	 * true so a cache/DB blip fails closed instead of silently falling back
+	 * to the PHP value. (No current caller does — require-captcha was the
+	 * one that did, and it's LocalSettings.php-only since it no longer has
+	 * a wiki-page override at all — but the resolver still supports it.)
 	 */
 	public function testResolveBoolFailsClosedOnReadErrorWhenAsked(): void {
 		$this->assertTrue(
@@ -78,11 +81,21 @@ class SuggestWikiConfigParseTest extends TestCase {
 
 	public function testRegisteredPagesCoverEveryOverridableSetting(): void {
 		$pages = SuggestWikiConfig::pages();
-		$this->assertArrayHasKey( 'SaintapediaSuggestRateLimitPage', $pages );
 		$this->assertArrayHasKey( 'SaintapediaSuggestNotifyUsersPage', $pages );
-		$this->assertArrayHasKey( 'SaintapediaSuggestRequireCaptchaPage', $pages );
 		$this->assertArrayHasKey( 'SaintapediaSuggestEnabledPage', $pages );
 		$this->assertArrayHasKey( 'SaintapediaSuggestTablesPage', $pages );
+	}
+
+	/**
+	 * Rate limit and require-captcha are abuse controls, pulled back to
+	 * LocalSettings.php-only (matching SaintapediaFeedback 1.9.0's identical
+	 * call for its own settings) — they must never come back as registered
+	 * wiki-page overrides.
+	 */
+	public function testAbuseControlsAreNotRegisteredPages(): void {
+		$pages = SuggestWikiConfig::pages();
+		$this->assertArrayNotHasKey( 'SaintapediaSuggestRateLimitPage', $pages );
+		$this->assertArrayNotHasKey( 'SaintapediaSuggestRequireCaptchaPage', $pages );
 	}
 
 	public function testParseTableLinesReadsFieldsAndWildcards(): void {
@@ -145,13 +158,15 @@ class SuggestWikiConfigParseTest extends TestCase {
 	}
 
 	public function testOverlayReadFailureMessageSaysWhatItDid(): void {
+		// Arbitrary config-key strings: this formatter doesn't care whether
+		// the key names an actually-registered page.
 		$this->assertStringContainsString(
 			'failing closed',
-			SuggestWikiConfig::overlayReadFailureMessage( 'SaintapediaSuggestRequireCaptchaPage', true )
+			SuggestWikiConfig::overlayReadFailureMessage( 'SaintapediaSuggestEnabledPage', true )
 		);
 		$this->assertStringContainsString(
 			'using PHP value',
-			SuggestWikiConfig::overlayReadFailureMessage( 'SaintapediaSuggestRateLimitPage', false )
+			SuggestWikiConfig::overlayReadFailureMessage( 'SaintapediaSuggestTablesPage', false )
 		);
 	}
 }

@@ -253,11 +253,6 @@ class Hooks {
 	public function onPageMoveComplete(
 		$old, $new, $user, $pageid, $redirid, $reason, $revision
 	): void {
-		$targets = [
-			[ SuggestAccess::getAccessPageTitle(), [ SuggestAccess::class, 'invalidateCache' ] ],
-			[ SuggestAccess::getEmailAccessPageTitle(), [ SuggestAccess::class, 'invalidateEmailCache' ] ],
-			[ SuggestAccess::getExportAccessPageTitle(), [ SuggestAccess::class, 'invalidateExportCache' ] ],
-		];
 		foreach ( [ $old, $new ] as $linkTarget ) {
 			try {
 				$t = Title::newFromLinkTarget( $linkTarget );
@@ -266,11 +261,6 @@ class Hooks {
 			}
 			if ( !$t ) {
 				continue;
-			}
-			foreach ( $targets as [ $page, $invalidate ] ) {
-				if ( $page && ( $t->equals( $page ) || $t->getPrefixedText() === $page->getPrefixedText() ) ) {
-					$invalidate();
-				}
 			}
 			SuggestWikiConfig::maybeInvalidate( $t );
 		}
@@ -282,16 +272,6 @@ class Hooks {
 	private static function maybeInvalidateConfigCaches( $title ): void {
 		if ( !$title ) {
 			return;
-		}
-		$map = [
-			[ SuggestAccess::getAccessPageTitle(), [ SuggestAccess::class, 'invalidateCache' ] ],
-			[ SuggestAccess::getEmailAccessPageTitle(), [ SuggestAccess::class, 'invalidateEmailCache' ] ],
-			[ SuggestAccess::getExportAccessPageTitle(), [ SuggestAccess::class, 'invalidateExportCache' ] ],
-		];
-		foreach ( $map as [ $page, $invalidate ] ) {
-			if ( $page && $title->equals( $page ) ) {
-				$invalidate();
-			}
 		}
 		SuggestWikiConfig::maybeInvalidate( $title );
 	}

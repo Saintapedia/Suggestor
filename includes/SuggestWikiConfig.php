@@ -6,9 +6,8 @@ use MediaWiki\MediaWikiServices;
 use Title;
 
 /**
- * On-wiki overrides for non-secret operational knobs: rate limit,
- * notify-user list, captcha-required, widget on/off, and the Cargo
- * table/field allow-list.
+ * On-wiki overrides for non-secret, non-abuse-control operational knobs:
+ * notify-user list, widget on/off, and the Cargo table/field allow-list.
  *
  * Mirrors SuggestAccess's MediaWiki:-page pattern: one page per setting,
  * PHP config is the fallback when the page is missing/empty, WAN-cached,
@@ -17,6 +16,14 @@ use Title;
  * Never use this for secrets (hCaptcha secret key, tokens) —
  * MediaWiki-namespace pages are readable by anyone even though editing is
  * restricted to editinterface, so only non-sensitive values belong here.
+ *
+ * Rate limit and require-captcha were on-wiki overridable through 0.7.0.
+ * SaintapediaFeedback's 1.9.0 review flagged the equivalent settings there
+ * as abuse/spam controls that should not be editable by anyone holding
+ * editinterface without a deploy or code review, and pulled them back to
+ * LocalSettings.php-only; this extension follows the same call for the
+ * same reason. See CaptchaGate::isCaptchaEnabled() and
+ * ApiSaintapediaSuggestSubmit::execute() for the PHP-only reads.
  */
 class SuggestWikiConfig {
 
@@ -31,9 +38,7 @@ class SuggestWikiConfig {
 	 */
 	public static function pages(): array {
 		return [
-			'SaintapediaSuggestRateLimitPage' => 'SaintapediaSuggest-ratelimit',
 			'SaintapediaSuggestNotifyUsersPage' => 'SaintapediaSuggest-notify-users',
-			'SaintapediaSuggestRequireCaptchaPage' => 'SaintapediaSuggest-require-captcha',
 			'SaintapediaSuggestEnabledPage' => 'SaintapediaSuggest-enabled',
 			'SaintapediaSuggestTablesPage' => 'SaintapediaSuggest-tables',
 		];

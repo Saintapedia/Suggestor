@@ -16,8 +16,13 @@ use WebRequest;
  *
  * Public mode: captcha required by default (almost all submitters are anon).
  * Enterprise mode: captcha off by default (more logged-in staff).
- * Per-wiki override via $wgSaintapediaSuggestRequireCaptcha, and per-wiki
- * without a deploy via MediaWiki:SaintapediaSuggest-require-captcha.
+ * Per-wiki override via $wgSaintapediaSuggestRequireCaptcha only —
+ * LocalSettings.php, not a wiki page. This is an abuse/spam control, not
+ * content curation, so (matching SaintapediaFeedback 1.9.0's identical call
+ * for its own require-captcha setting) it does not get an on-wiki override:
+ * a MediaWiki:-namespace page is editable by anyone holding editinterface,
+ * with no deploy or code review, and could otherwise turn captcha off
+ * wiki-wide.
  *
  * Uses ConfirmEdit + hCaptcha when available; fails closed when captcha is
  * required but ConfirmEdit/hCaptcha is not configured.
@@ -37,19 +42,9 @@ class CaptchaGate {
 	 */
 	public static function isCaptchaEnabled( Config $config ): bool {
 		$flag = $config->get( 'SaintapediaSuggestRequireCaptcha' );
-		$phpValue = $flag === null
+		return $flag === null
 			? $config->get( 'SaintapediaSuggestMode' ) !== 'enterprise'
 			: (bool)$flag;
-
-		// 4th arg: a cache/DB overlay failure fails closed to enabled, so a
-		// blip cannot turn captcha off when the wiki page had it on.
-		// Missing/empty page still uses $phpValue (standalone tests too).
-		return SuggestWikiConfig::effectiveBool(
-			'SaintapediaSuggestRequireCaptchaPage',
-			'SaintapediaSuggest-require-captcha',
-			$phpValue,
-			true
-		);
 	}
 
 	/**

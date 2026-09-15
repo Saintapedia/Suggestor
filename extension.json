@@ -1,6 +1,6 @@
 {
 	"name": "SaintapediaSuggest",
-	"version": "0.7.0",
+	"version": "0.8.0",
 	"author": [
 		"Saintapedia contributors"
 	],
@@ -180,11 +180,11 @@
 		},
 		"SaintapediaSuggestRateLimit": {
 			"value": 5,
-			"description": "Max suggestions per IP per day in public mode."
+			"description": "Max suggestions per IP per day in public mode. LocalSettings.php-only — an abuse control, not content curation, so it has no MediaWiki-namespace page override."
 		},
 		"SaintapediaSuggestEnterpriseRateLimit": {
 			"value": 50,
-			"description": "Max suggestions per IP per day in enterprise mode."
+			"description": "Max suggestions per IP per day in enterprise mode. LocalSettings.php-only, same reasoning as SaintapediaSuggestRateLimit."
 		},
 		"SaintapediaSuggestEnableEmail": {
 			"value": false,
@@ -192,7 +192,7 @@
 		},
 		"SaintapediaSuggestRequireCaptcha": {
 			"value": null,
-			"description": "Require hCaptcha via ConfirmEdit. null = auto (true for public mode, false for enterprise). true/false overrides per wiki."
+			"description": "Require hCaptcha via ConfirmEdit. null = auto (true for public mode, false for enterprise). true/false overrides per wiki. LocalSettings.php-only — an abuse control, not content curation, so it has no MediaWiki-namespace page override."
 		},
 		"SaintapediaSuggestNotifyUsers": {
 			"value": [],
@@ -206,47 +206,27 @@
 			"value": false,
 			"description": "Optional single email address notified on each new suggestion (requires $wgEnableEmail). false disables."
 		},
-		"SaintapediaSuggestAccessPage": {
-			"value": "SaintapediaSuggest-access",
-			"description": "MediaWiki-namespace page (DB key without prefix) listing groups allowed to manage suggestions. Missing/empty page falls back to AccessGroups."
-		},
 		"SaintapediaSuggestAccessGroups": {
 			"value": [
 				"sysop"
 			],
-			"description": "Default groups when the access page is missing or empty. Default sysop (safe for public wikis)."
-		},
-		"SaintapediaSuggestEmailAccessPage": {
-			"value": "SaintapediaSuggest-email-access",
-			"description": "MediaWiki-namespace page listing groups allowed to see the optional contact-email field. Separate from dashboard access."
+			"description": "Groups allowed to manage suggestions. LocalSettings.php-only (no MediaWiki-namespace page override) — an abuse/access control, not content curation. Default sysop (safe for public wikis)."
 		},
 		"SaintapediaSuggestEmailAccessGroups": {
 			"value": [
 				"sysop"
 			],
-			"description": "Default groups allowed to see the contact-email field when the email access page is missing or empty."
-		},
-		"SaintapediaSuggestExportAccessPage": {
-			"value": "SaintapediaSuggest-export-access",
-			"description": "MediaWiki-namespace page listing groups allowed to download the JSON export. Separate from dashboard access."
+			"description": "Groups allowed to see the optional contact-email field, separate from dashboard access. LocalSettings.php-only. A '*' token is always dropped (logged) — contact email can never be made visible to anonymous/everyone."
 		},
 		"SaintapediaSuggestExportAccessGroups": {
 			"value": [
 				"sysop"
 			],
-			"description": "Default groups allowed to export when the export access page is missing or empty."
-		},
-		"SaintapediaSuggestRateLimitPage": {
-			"value": "SaintapediaSuggest-ratelimit",
-			"description": "MediaWiki-namespace page holding a single integer overriding the mode-appropriate rate limit without a deploy."
+			"description": "Groups allowed to download the JSON export, separate from dashboard access. LocalSettings.php-only."
 		},
 		"SaintapediaSuggestNotifyUsersPage": {
 			"value": "SaintapediaSuggest-notify-users",
 			"description": "MediaWiki-namespace page, one username per line, overriding SaintapediaSuggestNotifyUsers without a deploy."
-		},
-		"SaintapediaSuggestRequireCaptchaPage": {
-			"value": "SaintapediaSuggest-require-captcha",
-			"description": "MediaWiki-namespace page holding true/false overriding SaintapediaSuggestRequireCaptcha. Security-sensitive: editable by anyone with editinterface."
 		},
 		"SaintapediaSuggestEnabledPage": {
 			"value": "SaintapediaSuggest-enabled",

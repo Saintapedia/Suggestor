@@ -4,28 +4,33 @@ namespace MediaWiki\Extension\SaintapediaSuggest;
 
 use MediaWiki\MediaWikiServices;
 use MediaWiki\User\UserIdentity;
-use Title;
 use User;
 
 /**
  * Who may view/triage the suggestion dashboard.
  *
- * Configurable via a MediaWiki-namespace page (default:
- * MediaWiki:SaintapediaSuggest-access). One group name per line.
+ * Configured from LocalSettings.php only (2026-09-15, matching
+ * SaintapediaFeedback's F-08 fix in its 2026-09-10 review): dashboard,
+ * email, and export access used to also be overridable from
+ * MediaWiki-namespace pages, editable by anyone holding editinterface with
+ * no deploy or code review. That on-wiki override is removed entirely for
+ * these three; only $wgSaintapediaSuggestAccessGroups / EmailAccessGroups /
+ * ExportAccessGroups (below) are consulted now. This shipped before
+ * Suggestor's first production deploy, so there is no upgrade concern —
+ * nothing was ever relying on the removed pages. (Lower-stakes operational
+ * settings — the Cargo table/field allow-list, notify list, enabled —
+ * remain wiki-overridable; see SuggestWikiConfig.)
  *
  * Special tokens:
  * - sysop — administrators [default; matches saintapediasuggest-view]
  * - user  — any persistent named account (not temp / IP)
- * - *     — everyone including anons (rarely appropriate)
+ * - *     — everyone including anons (rarely appropriate; never honored for
+ *           email access — see getAllowedEmailGroups())
  * - autoconfirmed, editor, … — normal MediaWiki groups
  *
- * Lines starting with # or ; and blank lines are ignored.
- *
- * Default when the page is missing or empty: [ 'sysop' ].
- * Users holding saintapediasuggest-view via LocalSettings always pass.
- *
- * Mirrors SaintapediaFeedback's FeedbackAccess so an admin who has
- * configured one wiki already knows how this one behaves.
+ * Default when a *Groups config var is unset or empty: [ 'sysop' ] for all
+ * three (dashboard, email, export). Users holding saintapediasuggest-view
+ * via LocalSettings always pass.
  */
 class SuggestAccess {
 
@@ -34,12 +39,6 @@ class SuggestAccess {
 	public const DEFAULT_EMAIL_GROUPS = [ 'sysop' ];
 
 	public const DEFAULT_EXPORT_GROUPS = [ 'sysop' ];
-
-	public const CACHE_KEY = 'saintapediasuggest-access-groups';
-
-	public const EMAIL_CACHE_KEY = 'saintapediasuggest-email-access-groups';
-
-	public const EXPORT_CACHE_KEY = 'saintapediasuggest-export-access-groups';
 
 	/**
 	 * Named account with a durable identity (not anon, not a MW temp account).
@@ -70,7 +69,7 @@ class SuggestAccess {
 
 		// Blocks revoke dashboard access. Mirrors the submit API: any block
 		// (including partial) is enough to deny, so admins can rely on a
-		// block alone under a broad access-page configuration.
+		// block alone under a broad access-group configuration.
 		if ( self::userIsBlocked( $userObj ) ) {
 			return false;
 		}
@@ -92,7 +91,9 @@ class SuggestAccess {
 	 * Separate from userCanManage() so email can be locked to a smaller set
 	 * even when the dashboard is opened up more broadly. Callers must gate
 	 * on userCanManage() first — this only decides email visibility for
-	 * someone who can already open the dashboard.
+	 * someone who can already open the dashboard. getAllowedEmailGroups()
+	 * never honors a "*" token: contact email must never be visible to
+	 * anonymous/everyone, regardless of how it's configured.
 	 */
 	public static function userCanViewEmail( UserIdentity $user ): bool {
 		try {
@@ -102,9 +103,6 @@ class SuggestAccess {
 				[ self::class, 'getAllowedEmailGroups' ]
 			);
 		} catch ( \Throwable $e ) {
-			// Isolated failure on the email-access page (separate cache key
-			// from dashboard access): hide email instead of 500ing. A general
-			// cache/DB outage still throws from userCanManage() first.
 			self::logClosedFailure( 'userCanViewEmail', $e );
 			return false;
 		}
@@ -131,13 +129,15 @@ class SuggestAccess {
 
 	private static function logClosedFailure( string $context, \Throwable $e ): void {
 		if ( function_exists( 'wfLogWarning' ) ) {
-			wfLogWarning( "SaintapediaSuggest: {$context} overlay read failed; denying. {$e->getMessage()}" );
+			wfLogWarning( "SaintapediaSuggest: {$context} failed; denying. {$e->getMessage()}" );
 		}
 	}
 
 	/**
-	 * Email/export check without the fail-closed wrapper. Throws on a
-	 * wiki-page read failure so callers can deny instead of 500.
+	 * Email/export check without the fail-closed wrapper. $groupsFn reads
+	 * plain LocalSettings.php config now (no wiki-page IO), so this should
+	 * not throw in practice; the try/catch in the two callers is kept as
+	 * defense-in-depth rather than removed.
 	 *
 	 * @param callable(): string[] $groupsFn
 	 */
@@ -166,7 +166,7 @@ class SuggestAccess {
 	}
 
 	/**
-	 * Whether the access-page group list grants this identity.
+	 * Whether the configured group list grants this identity.
 	 *
 	 * Ignores blocks and saintapediasuggest-view (applied in userCanManage).
 	 * The `user` token matches named accounts only — not anons, not temps.
@@ -212,115 +212,75 @@ class SuggestAccess {
 	}
 
 	/**
-	 * Groups currently allowed to manage suggestions.
+	 * Groups currently allowed to manage suggestions (from
+	 * $wgSaintapediaSuggestAccessGroups, or DEFAULT_GROUPS when unset/empty).
 	 *
 	 * @return string[]
 	 */
 	public static function getAllowedGroups(): array {
-		return self::getAllowedGroupsFor(
-			'SaintapediaSuggestAccessPage',
-			'SaintapediaSuggest-access',
-			'SaintapediaSuggestAccessGroups',
-			self::DEFAULT_GROUPS,
-			self::CACHE_KEY
-		);
+		return self::configuredGroups( 'SaintapediaSuggestAccessGroups', self::DEFAULT_GROUPS );
 	}
 
 	/**
-	 * Groups currently allowed to see the contact-email field.
+	 * Groups currently allowed to see the contact-email field (from
+	 * $wgSaintapediaSuggestEmailAccessGroups, or DEFAULT_EMAIL_GROUPS when
+	 * unset/empty). Independent of getAllowedGroups(). A "*" token is never
+	 * honored here: contact email must never be visible to
+	 * anonymous/everyone, so it is dropped before the list reaches
+	 * groupsGrantAccess() — even if it came from LocalSettings.php.
 	 *
 	 * @return string[]
 	 */
 	public static function getAllowedEmailGroups(): array {
-		return self::getAllowedGroupsFor(
-			'SaintapediaSuggestEmailAccessPage',
-			'SaintapediaSuggest-email-access',
-			'SaintapediaSuggestEmailAccessGroups',
-			self::DEFAULT_EMAIL_GROUPS,
-			self::EMAIL_CACHE_KEY
+		return self::withoutPublicWildcard(
+			self::configuredGroups( 'SaintapediaSuggestEmailAccessGroups', self::DEFAULT_EMAIL_GROUPS ),
+			'SaintapediaSuggestEmailAccessGroups'
 		);
 	}
 
 	/**
-	 * Groups currently allowed to export.
+	 * Groups currently allowed to export (from
+	 * $wgSaintapediaSuggestExportAccessGroups, or DEFAULT_EXPORT_GROUPS when
+	 * unset/empty). Independent of getAllowedGroups().
 	 *
 	 * @return string[]
 	 */
 	public static function getAllowedExportGroups(): array {
-		return self::getAllowedGroupsFor(
-			'SaintapediaSuggestExportAccessPage',
-			'SaintapediaSuggest-export-access',
-			'SaintapediaSuggestExportAccessGroups',
-			self::DEFAULT_EXPORT_GROUPS,
-			self::EXPORT_CACHE_KEY
-		);
+		return self::configuredGroups( 'SaintapediaSuggestExportAccessGroups', self::DEFAULT_EXPORT_GROUPS );
 	}
 
 	/**
-	 * @param string $pageConfigKey Config var naming the MediaWiki-namespace page
-	 * @param string $pageDefault Fallback DB key when that config var is unset
-	 * @param string $groupsConfigKey Config var with the PHP-default group list
-	 * @param string[] $groupsDefault Fallback when that config var is unset
-	 * @param string $cacheKeyPrefix
+	 * @param string $configKey
+	 * @param string[] $default
 	 * @return string[]
 	 */
-	private static function getAllowedGroupsFor(
-		string $pageConfigKey,
-		string $pageDefault,
-		string $groupsConfigKey,
-		array $groupsDefault,
-		string $cacheKeyPrefix
-	): array {
-		$services = MediaWikiServices::getInstance();
-		$config = $services->getMainConfig();
-		$cache = $services->getMainWANObjectCache();
-
-		$pageName = $config->get( $pageConfigKey );
-		if ( !is_string( $pageName ) || $pageName === '' ) {
-			$pageName = $pageDefault;
-		}
-
-		$defaults = $config->get( $groupsConfigKey );
-		if ( !is_array( $defaults ) || !$defaults ) {
-			$defaults = $groupsDefault;
-		}
-
-		return $cache->getWithSetCallback(
-			$cache->makeKey( $cacheKeyPrefix, md5( $pageName ) ),
-			$cache::TTL_HOUR,
-			static function () use ( $pageName, $defaults ) {
-				return self::loadGroupsFromPage( $pageName, $defaults );
-			}
-		);
+	private static function configuredGroups( string $configKey, array $default ): array {
+		$groups = MediaWikiServices::getInstance()->getMainConfig()->get( $configKey );
+		return ( is_array( $groups ) && $groups ) ? array_values( $groups ) : $default;
 	}
 
 	/**
-	 * @param string $pageName DB key under NS_MEDIAWIKI (no namespace prefix)
-	 * @param string[] $defaults
+	 * Drops a "*" (everyone including anonymous) token from a group list,
+	 * logging when it does so. Groups otherwise pass through
+	 * groupsGrantAccess() unfiltered; this is the one place "*" is refused
+	 * outright rather than just discouraged in documentation.
+	 * Pure aside from the log call; unit-testable.
+	 *
+	 * @param string[] $groups
 	 * @return string[]
 	 */
-	public static function loadGroupsFromPage( string $pageName, array $defaults ): array {
-		$title = Title::makeTitleSafe( NS_MEDIAWIKI, $pageName );
-		if ( !$title || !$title->exists() ) {
-			return array_values( $defaults );
+	public static function withoutPublicWildcard( array $groups, string $configKey ): array {
+		if ( !in_array( '*', $groups, true ) ) {
+			return $groups;
 		}
-
-		$services = MediaWikiServices::getInstance();
-		$wikipage = $services->getWikiPageFactory()->newFromTitle( $title );
-		$content = $wikipage->getContent();
-		if ( !$content ) {
-			return array_values( $defaults );
+		if ( function_exists( 'wfLogWarning' ) ) {
+			wfLogWarning(
+				"SaintapediaSuggest: {$configKey} included '*' (everyone, including anonymous "
+					. "readers). Contact-email visibility can never be made public; ignoring '*' "
+					. 'for this setting.'
+			);
 		}
-
-		$text = method_exists( $content, 'getText' )
-			? $content->getText()
-			: $content->getTextForSearchIndex();
-
-		$groups = self::parseGroupList( (string)$text );
-		if ( !$groups ) {
-			return array_values( $defaults );
-		}
-		return $groups;
+		return array_values( array_filter( $groups, static fn ( $g ) => $g !== '*' ) );
 	}
 
 	/**
@@ -328,8 +288,11 @@ class SuggestAccess {
 	 * leading wiki-list "*" marker (keeping a lone "*" as the everyone
 	 * token) and an inline "#" comment. Returns null when nothing is left.
 	 *
-	 * Pure; shared by parseGroupList() and SuggestWikiConfig so both accept
-	 * the same on-wiki page conventions.
+	 * Pure; shared by SuggestWikiConfig's line parsing so every remaining
+	 * wiki-overridable setting accepts the same on-wiki page conventions.
+	 * (Dashboard/email/export access no longer read a wiki page at all —
+	 * see the class docblock — but this helper is still load-bearing for
+	 * the settings that do.)
 	 */
 	public static function normalizeLine( string $line ): ?string {
 		$line = trim( $line );
@@ -348,91 +311,5 @@ class SuggestAccess {
 			$line = trim( substr( $line, 0, strpos( $line, '#' ) ) );
 		}
 		return $line === '' ? null : $line;
-	}
-
-	/**
-	 * Parse wiki page body into group tokens (pure; unit-testable).
-	 *
-	 * @return string[]
-	 */
-	public static function parseGroupList( string $text ): array {
-		$groups = [];
-		foreach ( preg_split( '/\r\n|\r|\n/', $text ) as $line ) {
-			$normalized = self::normalizeLine( $line );
-			if ( $normalized !== null ) {
-				$groups[] = $normalized;
-			}
-		}
-		$out = [];
-		foreach ( $groups as $g ) {
-			if ( !in_array( $g, $out, true ) ) {
-				$out[] = $g;
-			}
-		}
-		return $out;
-	}
-
-	/** Drop WAN cache after the access page is edited. */
-	public static function invalidateCache(): void {
-		self::invalidateCacheFor(
-			'SaintapediaSuggestAccessPage',
-			'SaintapediaSuggest-access',
-			self::CACHE_KEY
-		);
-	}
-
-	/** Drop WAN cache after the email-access page is edited. */
-	public static function invalidateEmailCache(): void {
-		self::invalidateCacheFor(
-			'SaintapediaSuggestEmailAccessPage',
-			'SaintapediaSuggest-email-access',
-			self::EMAIL_CACHE_KEY
-		);
-	}
-
-	/** Drop WAN cache after the export-access page is edited. */
-	public static function invalidateExportCache(): void {
-		self::invalidateCacheFor(
-			'SaintapediaSuggestExportAccessPage',
-			'SaintapediaSuggest-export-access',
-			self::EXPORT_CACHE_KEY
-		);
-	}
-
-	private static function invalidateCacheFor(
-		string $pageConfigKey,
-		string $pageDefault,
-		string $cacheKeyPrefix
-	): void {
-		$services = MediaWikiServices::getInstance();
-		$pageName = $services->getMainConfig()->get( $pageConfigKey );
-		if ( !is_string( $pageName ) || $pageName === '' ) {
-			$pageName = $pageDefault;
-		}
-		$cache = $services->getMainWANObjectCache();
-		$cache->delete( $cache->makeKey( $cacheKeyPrefix, md5( $pageName ) ) );
-	}
-
-	/** Title of the dashboard-access configuration page (for help links). */
-	public static function getAccessPageTitle(): ?Title {
-		return self::pageTitleFor( 'SaintapediaSuggestAccessPage', 'SaintapediaSuggest-access' );
-	}
-
-	/** Title of the email-access configuration page (for help links). */
-	public static function getEmailAccessPageTitle(): ?Title {
-		return self::pageTitleFor( 'SaintapediaSuggestEmailAccessPage', 'SaintapediaSuggest-email-access' );
-	}
-
-	/** Title of the export-access configuration page (for help links). */
-	public static function getExportAccessPageTitle(): ?Title {
-		return self::pageTitleFor( 'SaintapediaSuggestExportAccessPage', 'SaintapediaSuggest-export-access' );
-	}
-
-	private static function pageTitleFor( string $pageConfigKey, string $pageDefault ): ?Title {
-		$pageName = MediaWikiServices::getInstance()->getMainConfig()->get( $pageConfigKey );
-		if ( !is_string( $pageName ) || $pageName === '' ) {
-			$pageName = $pageDefault;
-		}
-		return Title::makeTitleSafe( NS_MEDIAWIKI, $pageName );
 	}
 }

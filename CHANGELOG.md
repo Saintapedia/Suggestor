@@ -2,6 +2,51 @@
 
 Releases are tagged. Pin a production wiki to a tag, not to floating `main`.
 
+## 0.8.0 — 2026-09-15
+
+### Security / access control
+
+- **Dashboard access, contact-email visibility, and export access are now
+  LocalSettings.php-only.** `SuggestAccess` used to also read
+  `MediaWiki:SaintapediaSuggest-access`, `-email-access`, and
+  `-export-access` — pages editable by anyone holding `editinterface`, with
+  no deploy or code review. A stray edit to `-email-access` alone could add
+  someone to the group that sees readers' submitted contact emails. That
+  on-wiki override is removed entirely; only `$wgSaintapediaSuggestAccessGroups`
+  / `EmailAccessGroups` / `ExportAccessGroups` are consulted now. Matches
+  SaintapediaFeedback's identical F-08 fix in its 2026-09-10 review.
+- **Rate limit and require-captcha are also LocalSettings.php-only now**,
+  for the same reason: both are abuse controls, not content curation, and a
+  wiki-page override could zero out the daily submission cap or turn
+  captcha off wiki-wide. `MediaWiki:SaintapediaSuggest-ratelimit` and
+  `-require-captcha` (added in 0.6.0/earlier) no longer do anything.
+- **Email-access can no longer be set to "everyone."** `getAllowedEmailGroups()`
+  now drops a `*` token from `$wgSaintapediaSuggestEmailAccessGroups`
+  (logging a warning) before the access check runs, mirroring the same
+  hardening in SaintapediaFeedback 1.9.0 — contact email can never be made
+  public, regardless of configuration.
+
+This shipped before Suggestor's first production deploy, so there is no
+upgrade population relying on the removed pages — unlike Feedback's 1.9.0,
+this needs no migration warning.
+
+### Upgrade notes
+
+No `update.php` required — no schema change. If you were relying on
+`MediaWiki:SaintapediaSuggest-access`, `-email-access`, `-export-access`,
+`-ratelimit`, or `-require-captcha` (only possible if you deployed an
+unreleased `main` checkout before this tag), move the equivalent settings
+to `LocalSettings.php`: `$wgSaintapediaSuggestAccessGroups`,
+`EmailAccessGroups`, `ExportAccessGroups`, `RateLimit`/`EnterpriseRateLimit`,
+`RequireCaptcha`.
+
+### Install pin
+
+```bash
+git clone --branch v0.8.0 --depth 1 \
+  https://github.com/Saintapedia/Suggestor.git SaintapediaSuggest
+```
+
 ## 0.7.0 — 2026-09-14
 
 ### Features

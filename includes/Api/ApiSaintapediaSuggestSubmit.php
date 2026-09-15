@@ -170,14 +170,13 @@ class ApiSaintapediaSuggestSubmit extends ApiBase {
 			'sha256',
 			$request->getIP() . $config->get( 'SecretKey' )
 		);
-		$phpLimit = $mode === 'enterprise'
+		// LocalSettings.php only — an abuse control, not content curation.
+		// No MediaWiki:-page override: matches SaintapediaFeedback 1.9.0's
+		// identical call for its own rate limit, for the same reason
+		// CaptchaGate::isCaptchaEnabled() no longer has one either.
+		$limit = (int)( $mode === 'enterprise'
 			? $config->get( 'SaintapediaSuggestEnterpriseRateLimit' )
-			: $config->get( 'SaintapediaSuggestRateLimit' );
-		$limit = SuggestWikiConfig::effectiveInt(
-			'SaintapediaSuggestRateLimitPage',
-			'SaintapediaSuggest-ratelimit',
-			(int)$phpLimit
-		);
+			: $config->get( 'SaintapediaSuggestRateLimit' ) );
 
 		$enableEmail = $mode === 'enterprise' || $config->get( 'SaintapediaSuggestEnableEmail' );
 		$contactEmail = null;

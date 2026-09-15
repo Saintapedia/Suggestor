@@ -6,44 +6,50 @@ use MediaWiki\Extension\SaintapediaSuggest\SuggestAccess;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Covers the pure on-wiki access-page parsing and the group-matching rule.
+ * Covers normalizeLine() (still load-bearing for SuggestWikiConfig's
+ * remaining wiki-overridable settings), the group-matching rule, and the
+ * pure half of the LocalSettings-only access-group resolution.
  *
  * @covers \MediaWiki\Extension\SaintapediaSuggest\SuggestAccess
  */
 class SuggestAccessParseTest extends TestCase {
 
-	public function testParsesOneGroupPerLine(): void {
+	public function testNormalizeLineIgnoresCommentsAndBlankLines(): void {
+		$this->assertNull( SuggestAccess::normalizeLine( '' ) );
+		$this->assertNull( SuggestAccess::normalizeLine( '   ' ) );
+		$this->assertNull( SuggestAccess::normalizeLine( '# a comment' ) );
+		$this->assertNull( SuggestAccess::normalizeLine( '; also a comment' ) );
+		$this->assertSame( 'sysop', SuggestAccess::normalizeLine( 'sysop' ) );
+		$this->assertSame( 'editor', SuggestAccess::normalizeLine( 'editor  # trailing' ) );
+	}
+
+	public function testNormalizeLineStripsWikiListMarkers(): void {
+		$this->assertSame( 'sysop', SuggestAccess::normalizeLine( '* sysop' ) );
+		$this->assertSame( 'user', SuggestAccess::normalizeLine( '* user' ) );
+	}
+
+	public function testNormalizeLineLoneStarSurvivesListMarkerStripping(): void {
+		$this->assertSame( '*', SuggestAccess::normalizeLine( '*' ) );
+		$this->assertSame( '*', SuggestAccess::normalizeLine( '* *' ) );
+	}
+
+	public function testWithoutPublicWildcardDropsStarOnly(): void {
+		// A '*' input intentionally calls wfLogWarning() when MediaWiki core
+		// is loaded (it isn't, in the standalone unit bootstrap this suite
+		// is meant to run under) — @-suppressed here since only the return
+		// value is under test, not the log call itself.
 		$this->assertSame(
 			[ 'sysop', 'editor' ],
-			SuggestAccess::parseGroupList( "sysop\neditor" )
+			@SuggestAccess::withoutPublicWildcard( [ 'sysop', '*', 'editor' ], 'SaintapediaSuggestEmailAccessGroups' )
 		);
-	}
-
-	public function testIgnoresCommentsAndBlankLines(): void {
-		$text = "# administrators\n\nsysop\n; another comment\neditor  # trailing\n";
-		$this->assertSame( [ 'sysop', 'editor' ], SuggestAccess::parseGroupList( $text ) );
-	}
-
-	public function testStripsWikiListMarkers(): void {
-		$this->assertSame( [ 'sysop', 'user' ], SuggestAccess::parseGroupList( "* sysop\n* user" ) );
-	}
-
-	public function testLoneStarSurvivesListMarkerStripping(): void {
-		$this->assertSame( [ '*' ], SuggestAccess::parseGroupList( '*' ) );
-		$this->assertSame( [ '*' ], SuggestAccess::parseGroupList( '* *' ) );
-	}
-
-	public function testDeduplicates(): void {
-		$this->assertSame( [ 'sysop' ], SuggestAccess::parseGroupList( "sysop\nsysop\n* sysop" ) );
-	}
-
-	public function testHandlesCrlf(): void {
-		$this->assertSame( [ 'sysop', 'editor' ], SuggestAccess::parseGroupList( "sysop\r\neditor" ) );
-	}
-
-	public function testEmptyTextYieldsNoGroups(): void {
-		$this->assertSame( [], SuggestAccess::parseGroupList( '' ) );
-		$this->assertSame( [], SuggestAccess::parseGroupList( "\n\n# only comments\n" ) );
+		$this->assertSame(
+			[ 'sysop' ],
+			SuggestAccess::withoutPublicWildcard( [ 'sysop' ], 'SaintapediaSuggestEmailAccessGroups' )
+		);
+		$this->assertSame(
+			[],
+			@SuggestAccess::withoutPublicWildcard( [ '*' ], 'SaintapediaSuggestEmailAccessGroups' )
+		);
 	}
 
 	public function testStarGrantsEveryone(): void {
