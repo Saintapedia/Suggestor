@@ -45,11 +45,31 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
    // $wgSaintapediaSuggestEnterpriseRateLimit = 50;   // enterprise mode
    $wgSaintapediaSuggestRequireCaptcha = null;   // null = auto from mode
 
-   // Who may triage suggestions / see contact emails / export. Default is
-   // sysop-only for all three if left unset.
-   // $wgSaintapediaSuggestAccessGroups       = [ 'sysop' ];
+   // Who may triage suggestions. 'user' = any logged-in named account, not
+   // just sysop -- any registered account can open the dashboard and mark
+   // items actioned. On a public wiki with open registration, that's a
+   // deliberately low bar; use a named group (e.g. 'autoconfirmed') or
+   // leave unset for the sysop-only default if that's too wide for your wiki.
+   $wgSaintapediaSuggestAccessGroups = [ 'user' ];
+   // Note: MediaWiki merges this with the extension's own ['sysop'] default
+   // (no merge_strategy is set on this array config), so the effective list
+   // is actually ['sysop', 'user'] -- harmless here since 'user' alone
+   // already grants every logged-in account, but don't expect setting this
+   // to fully replace the default rather than add to it.
+
+   // Contact emails and bulk export stay sysop-only regardless of the
+   // dashboard-access setting above -- deliberately more restrictive by
+   // default, not widened by this change.
    // $wgSaintapediaSuggestEmailAccessGroups  = [ 'sysop' ];
    // $wgSaintapediaSuggestExportAccessGroups = [ 'sysop' ];
+
+   // Echo-notify watchers of a page when a suggestion comes in on it, not
+   // just the fixed notify-list. Defaults to true, but was a near no-op
+   // while dashboard access was sysop-only (the alert is gated on the same
+   // access check, precisely so it can't leak a reader's proposed value to
+   // someone who can't open the dashboard) -- now meaningful with
+   // AccessGroups widened above.
+   // $wgSaintapediaSuggestNotifyWatchers = true;
 
    // Row label field: which field names each row of a multi-row table in
    // the picker. No wiki-page override.
@@ -128,6 +148,13 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 | `saintapediasuggest-view` | sysop | Dashboard access |
 | `saintapediasuggest-viewemail` | sysop | See the submitter's contact email |
 | `saintapediasuggest-export` | sysop | Download the JSON export |
+
+These are independent of, and in addition to, the `*AccessGroups` settings
+above — a user passes if they hold the right *or* belong to an allowed
+group. With `SaintapediaSuggestAccessGroups = [ 'user' ]` (as configured
+above), the `saintapediasuggest-view` right is redundant for dashboard
+access specifically — any logged-in account already qualifies via the
+group check.
 
 ## Rollback
 
