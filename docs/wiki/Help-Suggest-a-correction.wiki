@@ -1,0 +1,47 @@
+<!--
+  Paste this onto the wiki as [[Help:Suggest a correction]].
+  Source of truth in the extension repo: docs/wiki/Help-Suggest-a-correction.wiki
+  Reader-facing only. Operator/admin details live separately at
+  docs/wiki/Project-SaintapediaSuggest.wiki -> [[Project:SaintapediaSuggest]].
+-->
+= Suggest a correction =
+
+Spotted a wrong phone number, address, or other detail on an article? You can flag it in a few seconds — no account, no editing, no wikitext.
+
+== Where to find it ==
+
+On an article with a '''Suggest a correction''' button (usually a small floating button, or a link under '''Tools''' in the sidebar), click it to open the panel. If you don't see the button, this article doesn't have anything set up to suggest a correction to yet — see [[#If you don't see the button|below]].
+
+Closed the button by mistake? Reopen it from the '''Tools''' menu, or reload the page.
+
+== How it works ==
+
+# '''Which field?''' — choose what's wrong from the dropdown. If the article stores more than one entry of the same kind (say, several historical sightings or several Mass times), each one is listed separately and named so you can tell them apart.
+# The panel shows '''Currently:''' the value stored right now, so you can confirm you picked the right thing.
+# '''Suggested:''' type what it should say instead. This box starts filled in with the current value — edit it rather than retyping the whole thing.
+# '''Anything else? (optional)''' — a source URL or a short note helps whoever reviews it.
+# Your email (optional) — only asked for if the wiki has this turned on, and only used if a reviewer needs to follow up. Leave it blank if you'd rather not.
+# Click '''Send suggestion'''. You may be asked to solve a quick captcha first, to keep the queue free of automated spam.
+
+You'll see a "'''Thank you'''" confirmation once it's sent.
+
+== What happens next ==
+
+Your suggestion goes into a review queue — it does '''not''' change the page immediately. An editor checks it against the article's actual data and, if it's right, updates the underlying data by hand. This can take anywhere from minutes to a while, depending on how many editors are watching that queue.
+
+If someone else already reported the same correction, yours is quietly counted alongside theirs rather than creating a duplicate entry — so reporting something you've already seen flagged isn't wasted; it helps confirm it.
+
+== A few things worth knowing ==
+
+* You can typically submit a handful of suggestions per day; beyond that you'll be asked to wait and try again tomorrow. This limits automated abuse, not normal reading and correcting.
+* If you propose exactly the value that's already stored, you'll be told it's unchanged rather than have it added to the queue.
+* Nothing you submit is published automatically — a suggestion is never applied without a person reviewing it first.
+
+== If you don't see the button ==
+
+Not every article, and not every field on an article, has this set up — a wiki's editors choose in advance which specific facts are open to reader correction this way. If you've spotted something wrong that isn't covered, or the problem is with the article's writing rather than one specific fact, look for a general feedback option instead (often labelled something like '''Improve this article'''), or raise it on the article's talk page.
+
+== See also ==
+
+* [[Special:Version]] — confirms whether this feature is installed on this wiki
+* General feedback / "Improve this article", if available, for problems that aren't one specific field

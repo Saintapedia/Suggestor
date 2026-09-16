@@ -1,0 +1,130 @@
+<!--
+  Paste this onto the wiki as [[Project:SaintapediaSuggest]].
+  Source of truth in the extension repo: docs/wiki/Project-SaintapediaSuggest.wiki
+  Requires SaintapediaSuggest 0.8.1+. Access/email/export/rate-limit/
+  require-captcha are LocalSettings.php-only as of 0.8.0; the Cargo table/
+  field allow-list is wiki-editable as of 0.7.0 — see CHANGELOG.md.
+
+  Reader-facing instructions live separately at
+  docs/wiki/Help-Suggest-a-correction.wiki -> [[Help:Suggest a correction]].
+-->
+= SaintapediaSuggest (operator page) =
+
+Readers can propose a correction to one specific Cargo field from the '''Suggest a correction''' button on pages with an allow-listed row. Editors triage what arrives at [[Special:SaintapediaSuggest]].
+
+This page is the operator cheat-sheet: who can see what, which <code>MediaWiki:</code> pages exist, and what belongs in LocalSettings instead. It lives in the Project namespace so the widget (default namespaces: main only) does not appear on it, and so it stays out of article search / Special:AllPages / random article. See [[Help:Suggest a correction]] for the reader-facing explanation.
+
+== Dashboard access ==
+
+Dashboard: [[Special:SaintapediaSuggest]] (or Toolbox → '''Field suggestions''' on an article, which also shows a pending-count badge for that page).
+
+{| class="wikitable"
+! Right
+! Default
+! What it does
+|-
+| <code>saintapediasuggest-view</code>
+| sysop
+| Open the dashboard, triage, bulk-action. Also granted by <code>$wgSaintapediaSuggestAccessGroups</code> (LocalSettings.php).
+|-
+| <code>saintapediasuggest-viewemail</code>
+| sysop
+| See the optional contact-email field. Independent of dashboard access. <code>$wgSaintapediaSuggestEmailAccessGroups</code> (LocalSettings.php) — '''can never be set to public/everyone''', regardless of configuration.
+|-
+| <code>saintapediasuggest-export</code>
+| sysop
+| Download the JSON export. Independent of dashboard access. <code>$wgSaintapediaSuggestExportAccessGroups</code> (LocalSettings.php)
+|}
+
+A block revokes dashboard access immediately, even for sysop.
+
+'''Locking email or export to nobody''' takes two steps: revoke the sysop right in LocalSettings '''and''' set the matching <code>*AccessGroups</code> array to a dummy token such as <code>['no-one']</code>. An empty/unset array is not "nobody" — it always falls back to <code>['sysop']</code>.
+
+'''On this wiki''', <code>$wgSaintapediaSuggestAccessGroups = [ 'user' ]</code> — any logged-in named account, not just sysop, can open the dashboard and triage. Contact-email and export access remain sysop-only. If that's ever wrong for your wiki, it's a one-line LocalSettings change, not a wiki edit.
+
+== The allow-list (what's actually suggestable) ==
+
+'''Nothing is suggestable until a Cargo table is opted in''' — the safe default, not a misconfiguration. Edit [[MediaWiki:SaintapediaSuggest-tables]], one table per line:
+
+<pre>
+Footprints: LocationTitle, Coordinates, Address, City, AdministrativeSubdivision, Country, Diocese, SiteType, VisitAccess, EventYear, Sources
+Parishes: *
+</pre>
+
+* <code>Table: Field1, Field2</code> — explicit fields
+* <code>Table: *</code> or bare <code>Table</code> — every non-internal field
+* A page whose content doesn't name any real, currently existing Cargo table falls back to the LocalSettings list rather than disabling every suggestion wiki-wide (a typo here is loud, not silent)
+* Underscore-prefixed Cargo internals (<code>_pageID</code>, <code>_ID</code>, …) are never suggestable, even under <code>*</code>
+
+'''Allow-listing a field publishes its current stored value''' via the widget's "currently stored" line, to every reader, whether or not the article's template actually prints that field anywhere. Only allow-list fields you're comfortable making visible.
+
+Row-label field (which field names each row of a multi-row table in the picker) is LocalSettings-only, no wiki-page override:
+
+<pre>
+$wgSaintapediaSuggestRowLabelField = [ 'Footprints' => 'LocationTitle' ];
+</pre>
+
+== Security settings (LocalSettings.php only) ==
+
+Access (above), the rate limit, and CAPTCHA-required are '''not''' configurable from a wiki page: editing a <code>MediaWiki:</code> page needs only <code>editinterface</code>, with no deploy or code review, too low a bar for anti-abuse controls. Set these directly:
+
+<pre>
+$wgSaintapediaSuggestRateLimit = 5;                 // public mode, per hashed IP per day
+$wgSaintapediaSuggestEnterpriseRateLimit = 50;       // enterprise mode
+$wgSaintapediaSuggestRequireCaptcha = null;          // null = auto from mode; true/false to force
+</pre>
+
+<code>0</code> as a rate limit '''rejects every submit''' — it is not "unlimited".
+
+hCaptcha itself does not need separate configuration here if [[Project:SaintapediaFeedback|SaintapediaFeedback]] already loads ConfirmEdit/hCaptcha — the site key/secret are wiki-global, not per-extension.
+
+== On-wiki config pages (content curation only) ==
+
+These remain overridable from a <code>MediaWiki:</code> page (<code>editinterface</code> only) because they are content curation, not security controls. One value per line; <code>#</code> comments, blank lines, and a leading wiki-list <code>*</code> are ignored. Save/delete/move invalidates the cache immediately (no hour wait). '''If a page is missing or empty, LocalSettings / PHP defaults apply.'''
+
+{| class="wikitable"
+! Page
+! Format
+! Default when empty
+! On a cache/DB read failure
+|-
+| [[MediaWiki:SaintapediaSuggest-tables]]
+| one table per line, see above
+| LocalSettings list
+| LocalSettings list. Log: <code>using PHP value</code>
+|-
+| [[MediaWiki:SaintapediaSuggest-enabled]]
+| <code>true</code> / <code>false</code>
+| on
+| PHP value. Log: <code>using PHP value</code>
+|-
+| [[MediaWiki:SaintapediaSuggest-notify-users]]
+| one username per line
+| LocalSettings list
+| PHP value. Log: <code>using PHP value</code>
+|}
+
+Do '''not''' put the hCaptcha secret or the batch-exporter webhook token on a MediaWiki page. Those pages are world-readable.
+
+== Entry point ==
+
+Both SaintapediaSuggest and SaintapediaFeedback can show their own floating button at once — SaintapediaSuggest's stacks above SaintapediaFeedback's automatically, no configuration needed. On this wiki both buttons are enabled (<code>$wgSaintapediaSuggestEntryPoint = 'none'</code> would instead let SaintapediaFeedback's panel offer a "Correcting a specific fact instead?" hand-off as the sole entry point — not currently used here).
+
+== Notifications ==
+
+[[Special:Preferences]] → Notifications, or set <code>$wgSaintapediaSuggestNotifyUsers</code> / [[MediaWiki:SaintapediaSuggest-notify-users]] for a fixed list. <code>$wgSaintapediaSuggestNotifyWatchers</code> (default '''on''') also alerts anyone watching the article — but only if they already pass the dashboard-access check above, so widening <code>AccessGroups</code> is what actually makes watcher notifications reach non-sysop editors.
+
+== Troubleshooting ==
+
+* '''No button on a page you expect one on''' — check the page has an allow-listed table's row (Cargo data), the table/field is actually on [[MediaWiki:SaintapediaSuggest-tables]] or in <code>$wgSaintapediaSuggestTables</code>, and the page is in an allowed namespace.
+* '''"Permission error" on the dashboard''' — expected for anyone who doesn't hold <code>saintapediasuggest-view</code> or belong to an allowed group; not a bug.
+* '''A field you allow-listed isn't offered''' — it must also exist in Cargo's live schema for that table; a typo'd field name is silently dropped, not an error.
+
+== See also ==
+
+* Dashboard: [[Special:SaintapediaSuggest]]
+* Reader help: [[Help:Suggest a correction]]
+* Sibling extension operator page: [[Project:SaintapediaFeedback]]
+* List of rights: [[Special:ListGroupRights]]
+* Extension version: [[Special:Version]]
+* Repo runbook: https://github.com/Saintapedia/Suggestor/blob/main/DEPLOY.md

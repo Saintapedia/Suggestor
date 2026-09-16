@@ -1,0 +1,248 @@
+<!--
+  Paste this on mediawiki.org as [[Extension:SaintapediaSuggest]].
+  Source of truth in the extension repo: docs/wiki/Extension-SaintapediaSuggest.wiki
+  Reflects SaintapediaSuggest 0.8.1. Style follows Extension:SaintapediaFeedback.
+
+  Not the same page as docs/wiki/Project-SaintapediaSuggest.wiki (operator
+  cheat-sheet) or docs/wiki/Help-Suggest-a-correction.wiki (reader help) —
+  those two are pasted on your own wiki, not on mediawiki.org.
+-->
+{{Extension
+| status          = stable
+| hook1           = BeforePageDisplay
+| hook2           = SidebarBeforeOutput
+| hook3           = LoadExtensionSchemaUpdates
+| hook4           = PageSaveComplete
+| hook5           = PageDeleteComplete
+| hook6           = PageMoveComplete
+| hook7           = BeforeCreateEchoEvent
+| description     = Lets readers suggest a correction to one specific Cargo field on a page, with an editor triage dashboard
+| author          = [[User:PhotographerTom|Tom O'Neill]], Saintapedia contributors
+| maintainer      = [[User:PhotographerTom|Tom O'Neill]]
+| version         = 0.8.1
+| update          = 2026-09-16
+| mediawiki       = 1.39+
+| php             = 7.4+
+| needs-updatephp = Yes
+| license         = GPL-2.0-or-later
+| download        = {{GithubDownload|Saintapedia|Suggestor}}
+| readme          = [https://github.com/Saintapedia/Suggestor/blob/main/README.md README]
+| changelog       = [https://github.com/Saintapedia/Suggestor/blob/main/CHANGELOG.md Changelog]
+| example         = [https://saintapedia.org/ Saintapedia] (widget on articles with an allow-listed Cargo row; the dashboard itself is restricted)
+| rights          = saintapediasuggest-view, saintapediasuggest-viewemail, saintapediasuggest-export
+| parameters      = <nowiki/>
+* $wgSaintapediaSuggestMode
+* $wgSaintapediaSuggestNamespaces
+* $wgSaintapediaSuggestTables
+* $wgSaintapediaSuggestTablesPage
+* $wgSaintapediaSuggestRowLabelField
+* $wgSaintapediaSuggestMaxFields
+* $wgSaintapediaSuggestMaxValueLength
+* $wgSaintapediaSuggestMaxRowsPerTable
+* $wgSaintapediaSuggestFreshnessCheck
+* $wgSaintapediaSuggestMaxFreshnessLookups
+* $wgSaintapediaSuggestMergeDuplicates
+* $wgSaintapediaSuggestRateLimit
+* $wgSaintapediaSuggestEnterpriseRateLimit
+* $wgSaintapediaSuggestRequireCaptcha
+* $wgSaintapediaSuggestEnableEmail
+* $wgSaintapediaSuggestNotifyUsers
+* $wgSaintapediaSuggestNotifyUsersPage
+* $wgSaintapediaSuggestNotifyWatchers
+* $wgSaintapediaSuggestNotifyEmail
+* $wgSaintapediaSuggestAccessGroups
+* $wgSaintapediaSuggestEmailAccessGroups
+* $wgSaintapediaSuggestExportAccessGroups
+* $wgSaintapediaSuggestEnabled
+* $wgSaintapediaSuggestEnabledPage
+* $wgSaintapediaSuggestEntryPoint
+* $wgSaintapediaSuggestWebhook
+* $wgSaintapediaSuggestWebhookToken
+* $wgSaintapediaSuggestBatchSize
+}}
+The '''SaintapediaSuggest''' extension lets a reader propose a correction to one specific {{ll|Extension:Cargo|Cargo}} field stored for a page — a wrong phone number, an outdated address — without opening an edit form or understanding the underlying template. Editors triage what arrives at '''Special:SaintapediaSuggest'''. Nothing is ever written to Cargo or to wikitext directly: every suggestion is a queue entry a human reviews and applies (or dismisses) by hand.
+
+It is a narrower, more structured sibling to {{ll|Extension:SaintapediaFeedback|SaintapediaFeedback}}'s free-text "Improve this article" panel — SaintapediaFeedback is for "this article is out of date"; SaintapediaSuggest is for "this one infobox field is wrong", where a specific before/after value is worth capturing precisely. The two can run side by side: when both are installed, SaintapediaFeedback's panel can offer readers a hand-off ("Correcting a specific fact instead?") into SaintapediaSuggest's picker.
+
+Developed for [https://saintapedia.org/ Saintapedia].
+
+== Features ==
+
+* Field picker scoped to an explicit per-wiki allow-list — '''nothing is suggestable until a Cargo table is opted in''', the safe default rather than a misconfiguration
+* Row-aware: a page that stores several rows in one Cargo table (several sightings, several Mass times) gets one picker entry per row, each named by a configurable label field, not a bare "Row 1/2/3"
+* Server re-derives and snapshots the current stored value at submit time — the client's copy is never trusted
+* Duplicate folding: a second reader proposing the same value joins the first as a corroborating report instead of opening a second queue item
+* Freshness check on the dashboard: flags a suggestion the live Cargo value has already moved past, been actioned without the data changing, or matches what's already stored
+* Editor dashboard: filter, search, bulk-action, per-article view, per-item audit-trail detail view, Copy / Edit-article shortcuts on each row
+* Optional {{ll|Extension:Echo|Echo}} notifications to a named user list and to page watchers who already pass the dashboard-access check
+* Optional contact-email field and JSON/offline export, each gated behind its own right, independent of dashboard access
+* The Cargo table/field allow-list is itself overridable from a '''MediaWiki:''' page — add a table without a deploy — while access control, the rate limit, and CAPTCHA-required stay LocalSettings.php-only
+* Fails closed: if captcha is required but unavailable, submissions are rejected rather than let through
+
+== Installation ==
+
+{{ExtensionInstall
+|SaintapediaSuggest
+|registration=required
+|db-update=true
+|custom-steps=* Requires {{ll|Extension:Cargo|Cargo}}, loaded first. Optional: {{ll|Extension:ConfirmEdit|ConfirmEdit}} for captcha, {{ll|Extension:Echo|Echo}} for notifications.
+}}
+
+Clone from GitHub (the directory must be named <code>SaintapediaSuggest</code>, not <code>Suggestor</code> — <code>wfLoadExtension()</code> resolves by directory):
+
+<syntaxhighlight lang="bash">
+cd extensions/
+git clone --branch v0.8.1 --depth 1 https://github.com/Saintapedia/Suggestor.git SaintapediaSuggest
+</syntaxhighlight>
+
+Add to <code>LocalSettings.php</code>, '''after''' Cargo:
+
+<syntaxhighlight lang="php">
+wfLoadExtension( 'Cargo' );
+wfLoadExtension( 'SaintapediaSuggest' );
+</syntaxhighlight>
+
+The extension creates its own tables (<code>sps_suggestion</code>, <code>sps_suggestion_log</code>), so '''<code>update.php</code> must be run''' on install and after upgrades.
+
+'''Nothing is suggestable until you allow-list a table''' — see [[#Configuration|Configuration]] below.
+
+=== Optional dependencies ===
+
+; {{ll|Extension:ConfirmEdit|ConfirmEdit}}
+: Needed for captcha on submissions. Fails closed — if a captcha is required but ConfirmEdit/hCaptcha is unavailable or misconfigured, the submission is rejected rather than silently accepted. If {{ll|Extension:SaintapediaFeedback|SaintapediaFeedback}} already loads ConfirmEdit/hCaptcha, this extension reuses the same site-wide configuration; do not load it twice.
+; {{ll|Extension:Echo|Echo}}
+: Enables notifications to the notify-user list and to watchers of the article. Without Echo, suggestions are still recorded; they simply do not notify.
+
+== Configuration ==
+
+=== The allow-list ===
+
+<code>$wgSaintapediaSuggestTables</code> decides which (table, field) pairs are ever offered to a reader. Empty by default — installing the extension exposes nothing. A target must also exist in the live Cargo schema; this keeps a stale or hand-edited entry from reaching the database layer as an arbitrary identifier, and drops fields removed from a template since the allow-list was written. Underscore-prefixed Cargo internals (<code>_pageID</code>, <code>_ID</code>, …) are never suggestable, even under <code>'*'</code>.
+
+<syntaxhighlight lang="php">
+$wgSaintapediaSuggestTables = [
+    'Parishes' => [ 'Address', 'Phone', 'Website' ],  // explicit fields
+    'Dioceses' => '*',                                 // every non-internal field
+];
+</syntaxhighlight>
+
+'''Allow-listing a field publishes its current stored value''', not just an affordance to correct it — the widget's "currently stored" line shows it to every reader, whether or not the article's template actually renders that field anywhere. Only allow-list fields you're comfortable making visible.
+
+As of 0.7.0 this is also overridable from <code>MediaWiki:SaintapediaSuggest-tables</code> (one <code>Table: Field1, Field2</code> / <code>Table: *</code> / bare <code>Table</code> line per table) without a deploy — see [[#Wiki config (MediaWiki: pages)|Wiki config]] below. A page whose content doesn't name any real, currently existing Cargo table falls back to the PHP list rather than disabling every suggestion wiki-wide.
+
+=== Modes ===
+
+<code>$wgSaintapediaSuggestMode</code> selects a defaults profile:
+
+{| class="wikitable"
+! Mode !! For !! Captcha !! Rate limit !! Email field !! Dashboard access default
+|-
+| <code>public</code> (default) || Open reader-facing wikis || Required || 5 / IP / day || Off || sysop
+|-
+| <code>enterprise</code> || Logged-in intranet wikis || Off || 50 / IP / day || Available || sysop (set <code>$wgSaintapediaSuggestAccessGroups</code> to widen)
+|}
+
+=== Main settings ===
+
+; <code>$wgSaintapediaSuggestMode</code>
+: <code>public</code> or <code>enterprise</code>. Default: <code>public</code>.
+; <code>$wgSaintapediaSuggestNamespaces</code>
+: Namespaces where the widget shows and the API accepts submissions. Default: <code>[ NS_MAIN ]</code>.
+; <code>$wgSaintapediaSuggestRowLabelField</code>
+: Table => field naming each row in the picker, for tables where a page stores several rows. Unset tables fall back to the first allow-listed field with a value, then to "Row N". No wiki-page override.
+; <code>$wgSaintapediaSuggestMaxFields</code>
+: Cap on (table, field) pairs exposed to one page's widget. Default: <code>40</code>.
+; <code>$wgSaintapediaSuggestMaxValueLength</code>
+: Max characters for a suggested value and the stored snapshot. Default: <code>500</code>.
+; <code>$wgSaintapediaSuggestMaxRowsPerTable</code>
+: Cap on rows of one Cargo table offered for a single page. Default: <code>50</code>. Also bounds row-id validation — a real row beyond this cap is invisible to the extension.
+; <code>$wgSaintapediaSuggestFreshnessCheck</code> / <code>...MaxFreshnessLookups</code>
+: Compare each dashboard suggestion against the live Cargo value and badge notable cases. Defaults: <code>true</code> / <code>50</code> distinct (page, table) pairs per screen.
+; <code>$wgSaintapediaSuggestMergeDuplicates</code>
+: Fold repeat reports of the same value into one queue item, counted on the canonical row. Default: <code>true</code>.
+; <code>$wgSaintapediaSuggestRateLimit</code> / <code>...EnterpriseRateLimit</code>
+: Submissions per hashed IP per day, public/enterprise mode respectively. Defaults: <code>5</code> / <code>50</code>. LocalSettings.php only — not wiki-page overridable, an abuse control rather than content curation.
+; <code>$wgSaintapediaSuggestRequireCaptcha</code>
+: <code>null</code> = decide from mode; <code>true</code>/<code>false</code> to force. Default: <code>null</code>. LocalSettings.php only.
+; <code>$wgSaintapediaSuggestEnableEmail</code>
+: Show the optional contact-email field. Auto-on in enterprise mode. Default: <code>false</code>.
+; <code>$wgSaintapediaSuggestNotifyUsers</code> / <code>...NotifyWatchers</code> / <code>...NotifyEmail</code>
+: Usernames to Echo-notify, whether to also notify watchers who already pass the dashboard-access check, and an optional single email address alerted per submission. Defaults: <code>[]</code> / <code>true</code> / <code>false</code>.
+; <code>$wgSaintapediaSuggestAccessGroups</code> / <code>...EmailAccessGroups</code> / <code>...ExportAccessGroups</code>
+: Groups granted dashboard access, contact-email visibility, and export, independently. All default to <code>[ 'sysop' ]</code>. LocalSettings.php only — a <code>*</code> token is never honored in <code>EmailAccessGroups</code>. Note: MediaWiki merges an extension's array-type config default with your override rather than replacing it, so the effective list actually includes <code>'sysop'</code> plus whatever you add.
+; <code>$wgSaintapediaSuggestEnabled</code>
+: Master switch for the reader widget; the dashboard stays reachable when off. Default: <code>true</code>. Wiki-page overridable.
+; <code>$wgSaintapediaSuggestEntryPoint</code>
+: <code>'button'</code> for this extension's own floating button, <code>'none'</code> to let another extension (SaintapediaFeedback ≥ 1.8.0) open the panel via <code>mw.hook( 'saintapediasuggest.open' )</code>. Default: <code>'button'</code>. Both extensions can coexist with their own buttons stacked; <code>'none'</code> is only needed if you want a single merged entry point.
+; <code>$wgSaintapediaSuggestWebhook</code> / <code>...Token</code> / <code>...BatchSize</code>
+: Optional HTTPS endpoint for <code>maintenance/ProcessSuggestions.php</code>'s offline batch exporter. Defaults: <code>''</code>, <code>''</code>, <code>100</code>. The token is a secret — keep it in <code>LocalSettings.php</code> or the environment.
+
+Each remaining <code>MediaWiki:</code> page name (tables, enabled, notify-users) is itself renameable via the matching <code>*Page</code> variable (for example <code>$wgSaintapediaSuggestTablesPage</code>).
+
+=== User rights ===
+
+The three rights are '''independent'''. Granting dashboard access does not grant the other two.
+
+{| class="wikitable"
+! Right !! Default !! Grants
+|-
+| <code>saintapediasuggest-view</code> || sysop || Open the dashboard, triage suggestions, bulk-action
+|-
+| <code>saintapediasuggest-viewemail</code> || sysop || See the optional contact-email field
+|-
+| <code>saintapediasuggest-export</code> || sysop || Download the JSON export
+|}
+
+These are independent of, and in addition to, the <code>*AccessGroups</code> settings above — a user passes if they hold the right '''or''' belong to an allowed group. A block revokes dashboard access '''and''' submitting, immediately, including partial blocks.
+
+=== Wiki config (MediaWiki: pages) ===
+
+Only content-curation settings get a wiki page — abuse/access controls (rate limit, captcha-required, and who can triage / see emails / export) are deliberately LocalSettings.php-only, for the same reason {{ll|Extension:SaintapediaFeedback|SaintapediaFeedback}}'s equivalent settings are (its 2026-09-10 review, F-08): a <code>MediaWiki:</code> page needs only <code>editinterface</code>, with no deploy or code review, too low a bar for anti-abuse controls.
+
+{| class="wikitable"
+! Page !! Format !! Overrides
+|-
+| <code>MediaWiki:SaintapediaSuggest-tables</code> || one <code>Table: Field1, Field2</code> / <code>Table: *</code> / bare <code>Table</code> line per table || <code>$wgSaintapediaSuggestTables</code>
+|-
+| <code>MediaWiki:SaintapediaSuggest-enabled</code> || <code>true</code>/<code>false</code> || <code>$wgSaintapediaSuggestEnabled</code>
+|-
+| <code>MediaWiki:SaintapediaSuggest-notify-users</code> || one username per line || <code>$wgSaintapediaSuggestNotifyUsers</code>
+|}
+
+All are WAN-cached for an hour and invalidated immediately on save, delete or move. '''If a page is missing or empty, the PHP value applies.'''
+
+'''Never put a secret on a MediaWiki: page.''' Those pages are world-readable even though editing them is restricted.
+
+== Usage ==
+
+; Readers
+: '''Suggest a correction''' — the floating button on an article with an allow-listed Cargo row (or the toolbox link of the same name), or a hand-off from SaintapediaFeedback's panel if both extensions are installed.
+; Editors
+: '''Special:SaintapediaSuggest''', or '''Tools → Field suggestions''' on an article for that page's items.
+; Offline / LLM-assisted triage
+: <code>maintenance/ProcessSuggestions.php</code> posts a batch of pending suggestions to a configured webhook; <code>--dry-run</code> prints the payload without posting or marking anything exported.
+
+Submissions from the widget go through the API module <code>action=saintapediasuggest</code>.
+
+== Privacy and security ==
+
+* '''Every submission is a queue entry, never a direct write.''' Nothing reaches Cargo or wikitext until a human reviewer applies it by hand.
+* '''The current value is always re-derived server-side''' at submit time — a client-supplied "current value" would let a submitter fabricate the before-state a reviewer sees.
+* '''The contact-email field is off by default''' and, when enabled, is gated behind its own right, independent of dashboard access; the JSON export never includes it.
+* '''Access control, the rate limit, and CAPTCHA-required are LocalSettings.php-only''' — weakening them requires a deploy, not just a wiki edit.
+* '''The Cargo allow-list, unlike access control, is wiki-editable''' — this is a narrower exposure (it only offers an affordance on fields already selected for exposure, and nothing auto-applies), but allow-listing a field does publish its current value to every reader regardless of whether the template renders it. Treat that wiki page with the same care as reader-facing content.
+* '''Captcha fails closed.''' If required but ConfirmEdit/hCaptcha is unavailable or misconfigured, submissions are rejected rather than silently accepted.
+* '''Never run with real reader traffic prior to release 0.8.1''' — every claim above rests on unit/integration tests and scratch-wiki verification up to that point, not production use; watch the error log and dashboard closely after a first deploy.
+
+== See also ==
+
+* {{ll|Extension:Cargo|Cargo}} — required, the structured-data backend this extension corrects
+* {{ll|Extension:SaintapediaFeedback|SaintapediaFeedback}} — sibling free-text feedback extension; can hand off to this one
+* {{ll|Extension:ConfirmEdit|ConfirmEdit}} — captcha backend
+* {{ll|Extension:Echo|Echo}} — notifications
+* [https://github.com/Saintapedia/Suggestor/blob/main/DEPLOY.md Deployment runbook]
+* [https://github.com/Saintapedia/Suggestor/issues Issue tracker]
+
+{{Used by}}
+
+[[Category:Extensions by Saintapedia{{#translation:}}]]
