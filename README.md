@@ -639,6 +639,14 @@ files here.
 
 ## Version
 
+**0.8.1** — 8-issue review-finding batch: the wiki allow-list falls back to
+the PHP list on a bad edit instead of disabling every suggestion; the
+unchanged-value check matches duplicate folding's normalization; the bulk
+dashboard action shares the single-item action's per-page scoping;
+`ProcessSuggestions.php` can no longer double-POST a batch; the JSON export
+carries row identity and duplicate count; a missing widget i18n message is
+declared; README's access-control and allow-list sections are corrected.
+
 **0.8.0** — dashboard access, contact-email visibility, export access, rate
 limit and require-captcha are `LocalSettings.php`-only; the wiki-page override
 for all five is removed.
