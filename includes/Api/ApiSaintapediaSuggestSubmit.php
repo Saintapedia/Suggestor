@@ -6,6 +6,7 @@ use ApiBase;
 use MediaWiki\Extension\SaintapediaSuggest\CaptchaGate;
 use MediaWiki\Extension\SaintapediaSuggest\Cargo\CargoFieldRegistry;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestAccess;
+use MediaWiki\Extension\SaintapediaSuggest\SuggestionMerger;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestionStore;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestNotifier;
 use MediaWiki\Extension\SaintapediaSuggest\SuggestWikiConfig;
@@ -137,7 +138,12 @@ class ApiSaintapediaSuggestSubmit extends ApiBase {
 
 		// A "suggestion" identical to what is already stored is noise in the
 		// triage queue, so reject it before it costs a captcha or a row.
-		if ( $suggested === trim( $currentValue ) ) {
+		// Uses the same normalized comparison as duplicate folding and the
+		// freshness check (SuggestionMerger::valuesMatch()) rather than a
+		// raw strict-equality trim: a strict check let "st. fixture" past
+		// this gate against a stored "St. Fixture" only for the dashboard
+		// to immediately badge it "already applied" once it landed.
+		if ( SuggestionMerger::valuesMatch( $suggested, $currentValue ) ) {
 			$this->dieWithError( 'saintapediasuggest-error-unchanged', 'sps-unchanged' );
 		}
 

@@ -263,66 +263,70 @@ the contact email, so holding `-export` never yields email addresses, and holdin
 `-viewemail` never yields a bulk download.
 
 Blocked users are denied — dashboard access *and* submitting — including partial
-blocks. An admin can rely on a block alone even under a broad access-page setting.
+blocks. An admin can rely on a block alone even under a broad access-group setting.
 
 ### Who can use the dashboard?
 
-Same pattern as SaintapediaFeedback. Edit `MediaWiki:SaintapediaSuggest-access`,
-one group per line:
+**`LocalSettings.php`-only, as of 0.8.0** — there is no `MediaWiki:`-namespace
+page for this. Dashboard access, contact-email visibility, and export access
+used to also be overridable from wiki pages editable by anyone holding
+`editinterface`, with no deploy or code review; that override was removed
+entirely (matching SaintapediaFeedback's identical fix), because a stray edit
+to the email-access setting alone could add someone to the group that sees
+readers' submitted contact emails.
 
-```
-# Administrators (default)
-sysop
-
-# Any named account (not temp / not anon):
-# user
-
-# Or restrict further, for example:
-# editor
-# autoconfirmed
+```php
+$wgSaintapediaSuggestAccessGroups       = [ 'sysop' ];  // dashboard access
+$wgSaintapediaSuggestEmailAccessGroups  = [ 'sysop' ];  // contact-email visibility
+$wgSaintapediaSuggestExportAccessGroups = [ 'sysop' ];  // JSON export
 ```
 
 | Token / group | Meaning |
 |---------------|---------|
-| `sysop` | Administrators (**default**) |
+| `sysop` | Administrators (**default** for all three) |
 | `user` | Any named account — not anon, not a MediaWiki temp account |
 | `autoconfirmed` | Autoconfirmed users |
-| `*` | Everyone including anons (not recommended). A line that is only `*` works; `* *` is the wiki-list form |
+| `*` | Everyone including anons — **never honored for email access**: a `*` in `EmailAccessGroups` is dropped (and logged) before the check runs, so contact email can never be made public regardless of configuration |
 
-Blank lines, `#` and `;` comments, and `*` list markers are all handled.
-A missing or empty page falls back to `$wgSaintapediaSuggestAccessGroups` (`[ 'sysop' ]`).
-
-Email and export have their own pages with the same syntax:
-`MediaWiki:SaintapediaSuggest-email-access` and `MediaWiki:SaintapediaSuggest-export-access`.
+An unset or empty array falls back to `[ 'sysop' ]` for all three.
+MediaWiki merges an extension's array-type config default with your
+`LocalSettings.php` value (no `merge_strategy` is set on these), so the
+effective list is actually `[ 'sysop', ...your value ]`, not a full
+replacement — harmless if you're only adding groups, worth knowing if you
+expected `'sysop'` to disappear.
 
 ---
 
 ## On-wiki config for operational settings (no deploy)
 
+Only settings that are content curation, not abuse/access control, get a wiki
+page. Rate limit, require-captcha, and the three access-group settings above
+are `LocalSettings.php`-only — see "Who can use the dashboard?" above.
+
 | Setting | Page (DB key, no prefix) | Format | Overrides |
 |---------|---------------------------|--------|-----------|
-| Rate limit | `SaintapediaSuggest-ratelimit` | non-negative integer (`0` = reject every submit; delete the page to revert to PHP, do not write `0`) | `$wgSaintapediaSuggestRateLimit` / `EnterpriseRateLimit` (mode-appropriate one) |
+| Cargo table/field allow-list | `SaintapediaSuggest-tables` | one `Table: Field1, Field2` / `Table: *` / bare `Table` line per table | `$wgSaintapediaSuggestTables` |
 | Notify users | `SaintapediaSuggest-notify-users` | one username per line | `$wgSaintapediaSuggestNotifyUsers` |
-| Require captcha | `SaintapediaSuggest-require-captcha` | `true` / `false` | `$wgSaintapediaSuggestRequireCaptcha` (and the mode-based auto default) |
 | Widget on/off | `SaintapediaSuggest-enabled` | `true` / `false` | `$wgSaintapediaSuggestEnabled` |
-| Dashboard access | `SaintapediaSuggest-access` | one group per line | `$wgSaintapediaSuggestAccessGroups` |
-| Email access | `SaintapediaSuggest-email-access` | one group per line | `$wgSaintapediaSuggestEmailAccessGroups` |
-| Export access | `SaintapediaSuggest-export-access` | one group per line | `$wgSaintapediaSuggestExportAccessGroups` |
 
 All are WAN-cached for an hour and invalidated immediately on save, delete or move.
 
 > **Secrets never go on a wiki page.** MediaWiki-namespace pages are world-*readable*
 > even though editing needs `editinterface`. The hCaptcha secret key and any tokens
 > belong in `LocalSettings.php` or the environment.
->
-> `SaintapediaSuggest-require-captcha` is security-sensitive: anyone with
-> `editinterface` can turn the captcha off without code review. If a cache or DB
-> read of that page fails, the captcha **fails closed** (stays on) rather than
-> silently disabling itself.
 
-The allow-list itself (`$wgSaintapediaSuggestTables`) is deliberately **not**
-on-wiki overridable — it decides which of your structured columns are exposed, and
-that belongs under code review.
+The allow-list (`$wgSaintapediaSuggestTables`, or the wiki page above) **is**
+on-wiki overridable as of 0.7.0 — the earlier design note here calling it
+LocalSettings-only is outdated. Two things worth knowing before editing that
+page:
+
+- A page whose content doesn't name any real, currently existing Cargo table
+  (a typo, a dropped table) falls back to the PHP list rather than silently
+  disabling every suggestion on the wiki.
+- **Allow-listing a field publishes its current value**, not just an
+  affordance to correct it — the widget's "currently stored" line shows it to
+  every reader, whether or not the article's template actually prints that
+  field anywhere. Only allow-list fields you're comfortable making visible.
 
 ---
 
@@ -352,10 +356,10 @@ that belongs under code review.
 | `$wgSaintapediaSuggestWebhook` | `''` | HTTPS endpoint for the batch exporter. HTTP is refused |
 | `$wgSaintapediaSuggestWebhookToken` | `''` | Optional Bearer token for the batch POST. Keep in LocalSettings / env |
 | `$wgSaintapediaSuggestBatchSize` | `100` | Suggestions per exporter run (max 500) |
-| `$wgSaintapediaSuggestAccessGroups` | `[ 'sysop' ]` | Dashboard groups when the access page is missing/empty |
-| `$wgSaintapediaSuggestEmailAccessGroups` | `[ 'sysop' ]` | Contact-email groups |
-| `$wgSaintapediaSuggestExportAccessGroups` | `[ 'sysop' ]` | Export groups |
-| `$wgSaintapediaSuggest*Page` | see table above | Renames the corresponding `MediaWiki:` config page |
+| `$wgSaintapediaSuggestAccessGroups` | `[ 'sysop' ]` | Dashboard access groups. `LocalSettings.php`-only, no wiki-page override |
+| `$wgSaintapediaSuggestEmailAccessGroups` | `[ 'sysop' ]` | Contact-email visibility groups. `LocalSettings.php`-only; `*` is always dropped |
+| `$wgSaintapediaSuggestExportAccessGroups` | `[ 'sysop' ]` | Export groups. `LocalSettings.php`-only |
+| `$wgSaintapediaSuggestTablesPage` / `NotifyUsersPage` / `EnabledPage` | see table above | Renames the corresponding `MediaWiki:` config page. The equivalent `*Page` vars for access/email/export/rate-limit/require-captcha no longer exist |
 
 ---
 
@@ -634,6 +638,17 @@ files here.
 ---
 
 ## Version
+
+**0.8.0** — dashboard access, contact-email visibility, export access, rate
+limit and require-captcha are `LocalSettings.php`-only; the wiki-page override
+for all five is removed.
+
+**0.7.0** — the Cargo table/field allow-list gets a `MediaWiki:`-namespace
+override, joining the other operational settings.
+
+**0.6.1** — pre-production review fixes: a stale Echo access check, a
+row-id race on a multi-row table, and a field-switch value carryover in the
+widget.
 
 **0.6.0** — dashboard Copy + Edit article (still no write-back); omit `rowid`
 on a multi-row table is refused; duplicate folding lock is per target, not

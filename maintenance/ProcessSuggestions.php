@@ -73,40 +73,65 @@ class ProcessSuggestions extends Maintenance {
 				: (int)$config->get( 'SaintapediaSuggestBatchSize' )
 		);
 
-		$rows = $store->getPendingBatch( $limit );
-		if ( !$rows ) {
-			$this->output( "No pending suggestions.\n" );
-			return;
-		}
-
-		$payload = SuggestionBatch::buildPayload( $rows );
-		$ids = array_map( static function ( $row ) {
-			return (int)$row->sg_id;
-		}, $rows );
-
+		// A dry run never posts or marks anything, so there's nothing for a
+		// concurrent real run to race -- skip the lock entirely rather than
+		// have a --dry-run invocation block on, or be blocked by, one.
 		if ( $dryRun ) {
+			$rows = $store->getPendingBatch( $limit );
+			if ( !$rows ) {
+				$this->output( "No pending suggestions.\n" );
+				return;
+			}
 			$this->output( json_encode(
-				$payload,
+				SuggestionBatch::buildPayload( $rows ),
 				JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
 			) . "\n" );
 			$this->output( sprintf(
 				"Dry run: %d suggestion(s) would be posted; nothing marked exported.\n",
-				count( $ids )
+				count( $rows )
 			) );
 			return;
 		}
 
-		$this->output( sprintf( "Posting %d suggestion(s) to %s\n",
-			count( $ids ), SuggestionBatch::redactUrl( $webhook ) ) );
-
-		$status = $this->post( $webhook, $payload, $config );
-		if ( !$status ) {
-			// Leave the rows unmarked so the next run retries them.
-			$this->fatalError( 'Webhook POST failed; no rows marked exported.' );
+		// Held across the whole select -> POST -> mark sequence: two
+		// overlapping runs (or a slow one still in flight when the next is
+		// scheduled) must not both select the same pending rows and repost
+		// them. getPendingBatch() also reads DB_PRIMARY under this lock, so
+		// a run started right after another's markBatchProcessed() commit
+		// cannot see a lagged replica still showing those rows as pending.
+		if ( !$store->acquireBatchLock() ) {
+			$this->fatalError( 'Another ProcessSuggestions run holds the batch lock; not posting.' );
 		}
+		try {
+			$rows = $store->getPendingBatch( $limit );
+			if ( !$rows ) {
+				$this->output( "No pending suggestions.\n" );
+				return;
+			}
 
-		$marked = $store->markBatchProcessed( $ids );
-		$this->output( "Posted and marked $marked suggestion(s) as exported.\n" );
+			$payload = SuggestionBatch::buildPayload( $rows );
+			$ids = array_map( static function ( $row ) {
+				return (int)$row->sg_id;
+			}, $rows );
+
+			$this->output( sprintf( "Posting %d suggestion(s) to %s\n",
+				count( $ids ), SuggestionBatch::redactUrl( $webhook ) ) );
+
+			$status = $this->post( $webhook, $payload, $config );
+			if ( !$status ) {
+				// Leave the rows unmarked so the next run retries them. The
+				// lock still releases (finally, below) once this exits --
+				// fatalError() calls exit(), which drops the DB connection
+				// and releases the MySQL-side GET_LOCK regardless, but the
+				// explicit release in the finally block runs first.
+				$this->fatalError( 'Webhook POST failed; no rows marked exported.' );
+			}
+
+			$marked = $store->markBatchProcessed( $ids );
+			$this->output( "Posted and marked $marked suggestion(s) as exported.\n" );
+		} finally {
+			$store->releaseBatchLock();
+		}
 	}
 
 	/**

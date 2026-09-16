@@ -1,6 +1,6 @@
 # SaintapediaSuggest production deploy
 
-**Stable release: v0.8.0** — pin prod to this tag. Do not track floating `main`.
+**Stable release: v0.8.1** — pin prod to this tag. Do not track floating `main`.
 
 See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 
@@ -13,7 +13,7 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 
    ```bash
    cd /path/to/mediawiki/w/extensions   # or user-extensions on Canasta
-   git clone --branch v0.8.0 --depth 1 \
+   git clone --branch v0.8.1 --depth 1 \
      https://github.com/Saintapedia/Suggestor.git SaintapediaSuggest
    ```
 
@@ -94,9 +94,16 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 
    | Page | Holds | PHP fallback |
    |------|-------|--------------|
-   | `MediaWiki:SaintapediaSuggest-tables` | The allow-list. **Nothing is suggestable until a table is opted in** — that is the safe default, not a misconfiguration. One line per table: `Table: Field1, Field2`, `Table: *` for every field, or bare `Table` (also every field). | `$wgSaintapediaSuggestTables` |
+   | `MediaWiki:SaintapediaSuggest-tables` | The allow-list. **Nothing is suggestable until a table is opted in** — that is the safe default, not a misconfiguration. One line per table: `Table: Field1, Field2`, `Table: *` for every field, or bare `Table` (also every field). A page whose content doesn't name any real, currently existing Cargo table falls back to the PHP list rather than disabling every suggestion wiki-wide. | `$wgSaintapediaSuggestTables` |
    | `MediaWiki:SaintapediaSuggest-enabled` | `true`/`false`, master widget switch. | `$wgSaintapediaSuggestEnabled` |
    | `MediaWiki:SaintapediaSuggest-notify-users` | One username per line, who gets Echo alerts. | `$wgSaintapediaSuggestNotifyUsers` |
+
+   **Allow-listing a field publishes its current value**, not just an
+   affordance to correct it — the widget's "currently stored" line shows it
+   to every reader, whether or not the article's template actually prints
+   that field anywhere. Only allow-list fields you're comfortable making
+   visible; this is a wiki-editable page, so treat it with the same care
+   as any other reader-facing content.
 
    Example `MediaWiki:SaintapediaSuggest-tables` page body:
 
@@ -106,7 +113,7 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 
    **Access control (rate limit, require-captcha, and who can triage /
    see emails / export) is `LocalSettings.php`-only, deliberately with no
-   wiki-page override.** Through 0.8.0, all five had one — anyone holding
+   wiki-page override.** Through 0.7.0, all five had one — anyone holding
    `editinterface` could disable captcha, raise the submission cap, or add
    themselves to the group that sees readers' contact emails, with no
    deploy or code review. 0.8.0 removed that entirely, matching
@@ -122,7 +129,7 @@ See [CHANGELOG.md](./CHANGELOG.md). Requires **Extension:Cargo**.
 
    Creates `sps_suggestion` and `sps_suggestion_log`.
 
-5. Restart web and confirm **Special:Version** lists SaintapediaSuggest **0.8.0**.
+5. Restart web and confirm **Special:Version** lists SaintapediaSuggest **0.8.1**.
 
 ## Smoke checklist
 
@@ -159,7 +166,7 @@ group check.
 ## Rollback
 
 ```bash
-cd extensions/SaintapediaSuggest && git fetch --tags && git checkout v0.8.0
+cd extensions/SaintapediaSuggest && git fetch --tags && git checkout v0.8.1
 # or remove SaintapediaSuggest from settings.yaml and restart
 ```
 

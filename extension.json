@@ -1,6 +1,6 @@
 {
 	"name": "SaintapediaSuggest",
-	"version": "0.8.0",
+	"version": "0.8.1",
 	"author": [
 		"Saintapedia contributors"
 	],
@@ -124,7 +124,9 @@
 				"saintapediasuggest-error-captcha",
 				"saintapediasuggest-error-captcha-unavailable",
 				"saintapediasuggest-row-ordinal",
-				"saintapediasuggest-error-norow"
+				"saintapediasuggest-error-norow",
+				"saintapediasuggest-error-namespace",
+				"saintapediasuggest-error-disabled"
 			],
 			"dependencies": [
 				"mediawiki.api",

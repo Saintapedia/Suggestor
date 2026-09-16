@@ -2,6 +2,89 @@
 
 Releases are tagged. Pin a production wiki to a tag, not to floating `main`.
 
+## 0.8.1 — 2026-09-15
+
+Fixes from an external AI review of the full `main` branch at 95381d7
+(v0.8.0), filed as 8 issues.
+
+### Fixes
+
+- **A wiki allow-list edit naming no real Cargo table silently disabled
+  every suggestion on the wiki.** `CargoFieldRegistry::getAllowList()` now
+  falls back to the PHP `$wgSaintapediaSuggestTables` list when the wiki
+  override's content doesn't match any table that actually exists, instead
+  of treating a typo or a dropped table the same as a deliberate empty
+  list. (#6)
+- **The unchanged-value check disagreed with duplicate folding and the
+  freshness check.** The submit API compared a proposed value to the
+  stored one with a raw case-sensitive `trim` equality, while folding and
+  freshness both use `SuggestionMerger::valuesMatch()` (case, whitespace,
+  curly-punctuation normalized). A value differing only in case could pass
+  the submit check, land in the queue, and be immediately flagged "already
+  applied" once compared the other way. Both now use the same comparison.
+  (#2)
+- **The bulk status-update button didn't share the single-item button's
+  per-page scoping.** On the per-article dashboard view, the single-item
+  "mark actioned" path passes `sps_pageid` so a forged id can't touch
+  another page's row; the bulk button on the same form didn't. Not a
+  privilege escalation (dashboard access already gates the whole page),
+  but the two buttons now enforce the same invariant. `updateStatusBulk()`
+  takes an optional `$pageId`. (#4)
+- **`ProcessSuggestions.php` could double-POST the same batch** under
+  overlapping runs or replica lag: it read pending rows from `DB_REPLICA`
+  with no claim step before marking them processed. Now holds a named
+  lock (`SuggestionLocks::BATCH_CLAIM_LOCK`) across the whole
+  select → POST → mark sequence and reads `DB_PRIMARY`. (#5)
+- **Dashboard JSON export omitted Cargo row identity and duplicate
+  count.** `handleExport()` built its items from columns that didn't
+  include `sg_cargo_row_id` / `sg_cargo_row_label` / `sg_duplicate_count`,
+  even though they were already selected and the sibling offline exporter
+  (`SuggestionBatch::buildPayload()`) already emits them. For a page
+  storing several Cargo rows in one table, two suggestions correcting
+  different rows to the same value were indistinguishable in the export.
+  Now mirrors the batch payload's row fields. (#1)
+- **`ext.saintapediasuggest.widget`'s ResourceLoader module was missing
+  two i18n messages** (`saintapediasuggest-error-namespace`,
+  `-error-disabled`) it already references — a submit after an on-wiki
+  disable or a namespace-config change showed a raw message key instead of
+  translated text. (#8)
+
+### Docs
+
+- **README documented removed 0.8.0 config and had the 0.7.0 allow-list
+  change backwards.** It still told operators to edit
+  `MediaWiki:SaintapediaSuggest-access` / `-email-access` / `-export-access`
+  / `-ratelimit` / `-require-captcha` (all removed in 0.8.0, now
+  `LocalSettings.php`-only) and claimed `$wgSaintapediaSuggestTables` was
+  "deliberately not on-wiki overridable" (it has been since 0.7.0). Rewrote
+  both sections to match the code, and corrected the same "already public"
+  claim about allow-listed fields in `SuggestWikiConfig`'s docblock and
+  `DEPLOY.md`: allow-listing a field publishes its current value via the
+  widget regardless of whether the article's template actually renders
+  that field. (#7, plus the doc half of #6)
+
+### Not changed
+
+- Dashboard contact-email loading is still one query per visible row
+  (`renderRow()` → `getContactEmailsById()` per id), and emails of folded
+  duplicates are still never fetched. Both real, filed as a third issue in
+  the same review batch — left for a follow-up rather than bundled here.
+  (#3)
+
+### Upgrade notes
+
+No `update.php` required — no schema change. No behavior change for a
+correctly-configured wiki; #6's fallback only changes behavior for a wiki
+whose `MediaWiki:SaintapediaSuggest-tables` page was already broken (typo'd
+or stale table names), which previously silently disabled every suggestion.
+
+### Install pin
+
+```bash
+git clone --branch v0.8.1 --depth 1 \
+  https://github.com/Saintapedia/Suggestor.git SaintapediaSuggest
+```
+
 ## 0.8.0 — 2026-09-15
 
 ### Security / access control
