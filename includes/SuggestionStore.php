@@ -453,15 +453,41 @@ class SuggestionStore {
 	}
 
 	/**
+	 * Hold the batch-claim lock for the duration of a full
+	 * getPendingBatch() -> POST -> markBatchProcessed() sequence in
+	 * ProcessSuggestions.php, so an overlapping run (or a slow one still in
+	 * flight) cannot select and repost the same rows. Callers must release
+	 * via releaseBatchLock() in a finally block regardless of outcome —
+	 * MySQL also releases GET_LOCK automatically if the process dies before
+	 * that, but an explicit release keeps a pooled/reused connection from
+	 * holding it longer than necessary.
+	 *
+	 * @return bool False when the lock is already held elsewhere
+	 */
+	public function acquireBatchLock( int $timeout = 3 ): bool {
+		$db = $this->loadBalancer->getConnection( DB_PRIMARY );
+		return $db->lock( SuggestionLocks::BATCH_CLAIM_LOCK, __METHOD__, $timeout );
+	}
+
+	public function releaseBatchLock(): void {
+		$db = $this->loadBalancer->getConnection( DB_PRIMARY );
+		$db->unlock( SuggestionLocks::BATCH_CLAIM_LOCK, __METHOD__ );
+	}
+
+	/**
 	 * Canonical suggestions not yet posted to the batch webhook, oldest first.
 	 *
 	 * Only open items are exported: an actioned or dismissed suggestion has
 	 * already had a human decision and does not need offline triage help.
 	 *
+	 * Reads DB_PRIMARY, not a replica: called only under acquireBatchLock(),
+	 * where the point is to see every row markBatchProcessed() has already
+	 * committed, not a possibly-lagged replica view of the same rows.
+	 *
 	 * @return object[]
 	 */
 	public function getPendingBatch( int $limit = 100 ): array {
-		$db = $this->loadBalancer->getConnection( DB_REPLICA );
+		$db = $this->loadBalancer->getConnection( DB_PRIMARY );
 		$rows = $db->select(
 			'sps_suggestion',
 			array_merge( self::MANAGER_LIST_FIELDS, [ 'sg_batch_processed' ] ),
@@ -570,7 +596,8 @@ class SuggestionStore {
 		array $ids,
 		string $status,
 		?int $actorUserId = null,
-		?string $workNote = null
+		?string $workNote = null,
+		?int $pageId = null
 	): int {
 		$ids = array_values( array_unique( array_filter( array_map( 'intval', $ids ) ) ) );
 		if ( !$ids || !in_array( $status, SuggestFilters::processActions(), true ) ) {
@@ -581,9 +608,16 @@ class SuggestionStore {
 		$note = $workNote !== null ? $this->clampNote( $workNote ) : null;
 
 		// Read prior statuses first so the audit log records real transitions
-		// rather than "unknown -> actioned" for every row.
+		// rather than "unknown -> actioned" for every row. $pageId, when
+		// given, scopes this the same way updateStatus() scopes a single-row
+		// update: the per-article view's bulk button must not be able to
+		// mutate a row belonging to a different page via a forged id.
+		$conds = [ 'sg_id' => $ids ];
+		if ( $pageId !== null ) {
+			$conds['sg_page_id'] = $pageId;
+		}
 		$prior = [];
-		$res = $db->select( 'sps_suggestion', [ 'sg_id', 'sg_status' ], [ 'sg_id' => $ids ], __METHOD__ );
+		$res = $db->select( 'sps_suggestion', [ 'sg_id', 'sg_status' ], $conds, __METHOD__ );
 		foreach ( $res as $row ) {
 			$prior[(int)$row->sg_id] = (string)$row->sg_status;
 		}

@@ -178,6 +178,16 @@ class CargoFieldRegistry {
 	 * request — this is called on every getAllowedFields() lookup, and the
 	 * wiki-page read behind it is only WAN-cached, not free.
 	 *
+	 * If the wiki page has content but none of it names a real, currently
+	 * existing Cargo table (a typo, a dropped table, unrelated text), this
+	 * falls back to the PHP list instead of using the empty result. Without
+	 * that check, a single bad edit to a page anyone holding editinterface
+	 * can reach would silently disable every suggestion on the wiki — the
+	 * live-schema gate below (getSchemas()/getRealTables()) already treats
+	 * an unmatched table name as "nothing allowed", so the only way to tell
+	 * "the wiki page deliberately named tables that don't exist" apart from
+	 * "the wiki page is garbage" is this same check.
+	 *
 	 * @return array<string,true|string[]>
 	 */
 	public function getAllowList(): array {
@@ -185,8 +195,15 @@ class CargoFieldRegistry {
 			return $this->allowListCache;
 		}
 		$phpValue = $this->config->get( 'SaintapediaSuggestTables' );
-		$raw = SuggestWikiConfig::effectiveTablesRaw( is_array( $phpValue ) ? $phpValue : [] );
-		$this->allowListCache = self::normalizeAllowList( $raw );
+		$phpValue = is_array( $phpValue ) ? $phpValue : [];
+		$raw = SuggestWikiConfig::effectiveTablesRaw( $phpValue );
+
+		$normalized = self::normalizeAllowList( $raw );
+		if ( $raw !== $phpValue && !array_intersect( array_keys( $normalized ), $this->getRealTables() ) ) {
+			$normalized = self::normalizeAllowList( $phpValue );
+		}
+
+		$this->allowListCache = $normalized;
 		return $this->allowListCache;
 	}
 

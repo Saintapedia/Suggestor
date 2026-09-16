@@ -271,10 +271,19 @@ class SuggestWikiConfig {
 	 * get identical validation regardless of where the list came from.
 	 *
 	 * Unlike SaintapediaFeedback's access-control settings, this is not
-	 * treated as security-sensitive enough to keep LocalSettings-only: it
-	 * only decides which already-public Cargo fields get a "suggest a
-	 * correction" affordance, and nothing here is auto-applied — every
-	 * submission still lands in the review queue.
+	 * treated as security-sensitive enough to keep LocalSettings-only:
+	 * nothing here is auto-applied, every submission still lands in the
+	 * review queue, and it can only ever reach real, existing Cargo tables
+	 * (getAllowList()'s fallback below refuses to let a garbage edit go
+	 * live as "nothing allowed").
+	 *
+	 * It is NOT limited to fields the article's template actually renders,
+	 * though — allow-listing a field puts its current stored value on the
+	 * page for every reader via the widget's "currently stored" line,
+	 * whether or not the template prints that field anywhere. An
+	 * editinterface holder allow-listing an internal-only field publishes
+	 * it. Document this on the wiki page itself; there is no automated way
+	 * to check "does the template print this field" from here.
 	 *
 	 * @param array<string,true|string[]> $phpRawValue
 	 * @return array<string,true|string[]>

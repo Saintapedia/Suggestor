@@ -8,6 +8,7 @@ use HashConfig;
 use MediaWiki\Extension\SaintapediaSuggest\Cargo\CargoFieldRegistry;
 use MediaWiki\MediaWikiServices;
 use MediaWikiIntegrationTestCase;
+use Title;
 
 /**
  * CargoFieldRegistry against a real Cargo schema.
@@ -82,6 +83,88 @@ class CargoFieldRegistryIntegrationTest extends MediaWikiIntegrationTestCase {
 
 	private function allowAll(): CargoFieldRegistry {
 		return $this->registry( [ self::TABLE => '*' ] );
+	}
+
+	/**
+	 * Creates MediaWiki:SaintapediaSuggest-tables with $text. A real save, so
+	 * Hooks::onPageSaveComplete() fires and invalidates SuggestWikiConfig's
+	 * WAN cache the same way a real admin edit would — no manual cache-clear
+	 * needed in the tests below. The page starts out missing in every test
+	 * (each test runs in its own rolled-back transaction), so the
+	 * "missing/empty page" case just means never calling this.
+	 */
+	private function setTablesPage( string $text ): void {
+		$this->editPage( Title::makeTitleSafe( NS_MEDIAWIKI, 'SaintapediaSuggest-tables' ), $text );
+	}
+
+	/**
+	 * #6 regression guard: a page with content that names no real, currently
+	 * existing Cargo table must fall back to the PHP allow-list rather than
+	 * disabling every suggestion wiki-wide. See CargoFieldRegistry::getAllowList().
+	 */
+	public function testAllowListFallsBackToPhpWhenNoOverlayLineNamesARealTable(): void {
+		$this->setTablesPage( "NotARealTable: SomeField\nAlsoNotReal: *" );
+
+		$registry = $this->registry( [ self::TABLE => [ 'Name', 'City' ] ] );
+
+		$this->assertSame(
+			[ self::TABLE ],
+			$registry->getTablesForPage( self::PAGE_ID ),
+			'A junk wiki override must not make the PHP-configured table disappear'
+		);
+		$this->assertSame( [ 'Name', 'City' ], $registry->getAllowedFields( self::TABLE ) );
+	}
+
+	/**
+	 * Same guard, missing-page case: no MediaWiki:SaintapediaSuggest-tables
+	 * page at all must use the PHP list, same as an unrecognized one.
+	 */
+	public function testAllowListUsesPhpValueWhenOverlayPageIsMissing(): void {
+		$registry = $this->registry( [ self::TABLE => '*' ] );
+
+		$this->assertSame(
+			[ self::TABLE ],
+			$registry->getTablesForPage( self::PAGE_ID )
+		);
+	}
+
+	/**
+	 * A wiki page naming a real table wins over the PHP list, even when the
+	 * PHP list configures something else entirely — the whole point of
+	 * SaintapediaSuggestTablesPage is to let an admin change this without a
+	 * deploy.
+	 */
+	public function testAllowListOverlayWinsOverPhpValueWhenItNamesARealTable(): void {
+		$this->setTablesPage( self::TABLE . ': Name, City' );
+
+		// PHP list points at a table that does not exist -- if the overlay
+		// were ignored, getTablesForPage() would come back empty.
+		$registry = $this->registry( [ 'SomeOtherConfiguredTable' => '*' ] );
+
+		$this->assertSame( [ self::TABLE ], $registry->getTablesForPage( self::PAGE_ID ) );
+		$this->assertSame( [ 'Name', 'City' ], $registry->getAllowedFields( self::TABLE ) );
+	}
+
+	/**
+	 * An overlay naming a real table, but only fields that do not exist in
+	 * its schema, is a deliberate "nothing from this table" configuration
+	 * (a typo'd field, or an admin narrowing access down to zero fields on
+	 * purpose) -- distinct from #6's "the table name itself is junk" case.
+	 * The table name still matches a real Cargo table, so this must NOT
+	 * fall back to the PHP list; it should keep the overlay and end up with
+	 * no allowed fields for that table via the ordinary schema-intersection
+	 * path in getAllowedFields(), not via the fallback.
+	 */
+	public function testAllowListOverlayNamingARealTableWithNoRealFieldsIsKeptNotFallenBack(): void {
+		$this->setTablesPage( self::TABLE . ': NoSuchFieldAtAll' );
+
+		$registry = $this->registry( [ self::TABLE => [ 'Name', 'City' ] ] );
+
+		// The table is still recognized (overlay wins, not a fallback)...
+		$this->assertSame( [ self::TABLE ], $registry->getTablesForPage( self::PAGE_ID ) );
+		// ...but nothing from it is actually suggestable, because the only
+		// field the overlay named does not exist in the live schema.
+		$this->assertSame( [], $registry->getAllowedFields( self::TABLE ) );
 	}
 
 	public function testFixtureIsVisibleToCargo(): void {

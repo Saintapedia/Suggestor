@@ -388,6 +388,22 @@ class ApiSaintapediaSuggestSubmitTest extends ApiTestCase {
 	}
 
 	/**
+	 * The unchanged-value check uses SuggestionMerger::valuesMatch(), the
+	 * same normalized comparison as duplicate folding and the freshness
+	 * check -- not a raw case-sensitive equality. A prior version of this
+	 * check would have let this through to the queue, only for the
+	 * dashboard's freshness check to immediately flag it "already applied".
+	 */
+	public function testResubmittingTheStoredValueWithDifferentCaseIsRefused(): void {
+		$this->assertRefusedWith( 'sps-unchanged', [
+			'pageid'         => $this->existingPageId(),
+			'table'          => self::TABLE,
+			'field'          => 'Name',
+			'suggestedvalue' => 'st. fixture',
+		] );
+	}
+
+	/**
 	 * A second reader proposing the same value joins the first as a duplicate
 	 * rather than opening a second queue item.
 	 */

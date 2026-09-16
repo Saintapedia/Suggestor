@@ -484,11 +484,17 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 			return true;
 		}
 
+		// Shares the single-item path's page scoping (handleStatusUpdate()
+		// above): on the per-article dashboard view, the bulk button must
+		// not be able to mutate a row belonging to a different page via a
+		// forged sps_ids[] entry.
+		$pageId = (int)$request->getInt( 'sps_pageid' );
 		$n = $this->store->updateStatusBulk(
 			$ids,
 			$status,
 			$this->getUser()->getId(),
-			$request->getVal( 'sps_bulk_worknote' )
+			$request->getVal( 'sps_bulk_worknote' ),
+			$pageId > 0 ? $pageId : null
 		);
 
 		$this->redirectAfterMutation( [ 'sps_flash' => 'bulk', 'sps_flash_n' => (string)$n ] );
@@ -574,11 +580,21 @@ class SpecialSaintapediaSuggest extends SpecialPage {
 				'namespace'      => (int)$row->sg_page_namespace,
 				'cargoTable'     => (string)$row->sg_cargo_table,
 				'cargoField'     => (string)$row->sg_cargo_field,
+				'cargoRowId'     => isset( $row->sg_cargo_row_id )
+					? (int)$row->sg_cargo_row_id
+					: null,
+				'cargoRowLabel'  => isset( $row->sg_cargo_row_label )
+					&& (string)$row->sg_cargo_row_label !== ''
+					? (string)$row->sg_cargo_row_label
+					: null,
 				'currentValue'   => $row->sg_current_value !== null ? (string)$row->sg_current_value : null,
 				'suggestedValue' => (string)$row->sg_suggested_value,
 				'comment'        => $row->sg_comment !== null ? (string)$row->sg_comment : null,
 				'status'         => (string)$row->sg_status,
 				'mode'           => (string)$row->sg_mode,
+				// How many readers reported the same value -- mirrors
+				// SuggestionBatch::buildPayload() so both exports agree.
+				'duplicateCount' => (int)( $row->sg_duplicate_count ?? 0 ),
 				'timestamp'      => (string)$row->sg_timestamp,
 			];
 		}

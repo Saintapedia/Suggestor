@@ -278,6 +278,41 @@ class SuggestionStoreTest extends MediaWikiIntegrationTestCase {
 		$this->assertSame( 'actioned', (string)end( $logB )->slog_new_status );
 	}
 
+	/**
+	 * Mirrors testUpdateStatusHonoursThePageGuard() for the bulk path: the
+	 * per-article dashboard's bulk-action button must not be able to mutate
+	 * a row belonging to a different page via a forged sps_ids[] entry,
+	 * same as the single-item button on the same form.
+	 */
+	public function testBulkUpdateHonoursThePageGuard(): void {
+		$onPage = $this->store->insert( $this->row( [ 'pageId' => 100 ] ) );
+		$elsewhere = $this->store->insert( $this->row( [ 'pageId' => 200 ] ) );
+
+		$n = $this->store->updateStatusBulk( [ $onPage, $elsewhere ], 'actioned', 1, null, 100 );
+
+		$this->assertSame( 1, $n, 'Only the row actually on page 100 should be updated' );
+		$this->assertSame( 'actioned', (string)$this->store->getById( $onPage )->sg_status );
+		$this->assertSame(
+			'new',
+			(string)$this->store->getById( $elsewhere )->sg_status,
+			'A row on a different page must not be reachable through a page-scoped bulk update'
+		);
+	}
+
+	/**
+	 * The global "all suggestions" dashboard view has no page filter, so an
+	 * omitted $pageId (its bulk form has no sps_pageid to send) must still
+	 * update every selected row regardless of which page it belongs to.
+	 */
+	public function testBulkUpdateWithoutPageIdUpdatesAnyPage(): void {
+		$a = $this->store->insert( $this->row( [ 'pageId' => 100 ] ) );
+		$b = $this->store->insert( $this->row( [ 'pageId' => 200 ] ) );
+
+		$n = $this->store->updateStatusBulk( [ $a, $b ], 'actioned', 1 );
+
+		$this->assertSame( 2, $n );
+	}
+
 	public function testBulkUpdateRejectsNewAsATarget(): void {
 		$id = $this->store->insert( $this->row() );
 		$this->assertSame( 0, $this->store->updateStatusBulk( [ $id ], 'new', 1 ) );
